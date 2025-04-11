@@ -956,6 +956,8 @@ export default {
 		},
 		
 		async formatChat(summaryArray) {
+			console.log("Raw summary array:", JSON.stringify(summaryArray, null, 2));
+			
 			const resultsArray = [];
 			console.log(`Formatuję wyniki AI...`);
 			
