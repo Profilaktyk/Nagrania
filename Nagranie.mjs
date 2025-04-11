@@ -956,95 +956,98 @@ export default {
 		},
 		
 		async formatChat(summaryArray) {
-			console.log("Raw summary array:", JSON.stringify(summaryArray, null, 2));
-			
-			const resultsArray = [];
-			console.log(`Formatuję wyniki AI...`);
-			
-			for (let result of summaryArray) {
-				const response = {
-					choice: this.repairJSON(result.choices[0].message.content),
-					usage: !result.usage.total_tokens ? 0 : result.usage.total_tokens,
-				};
-				resultsArray.push(response);
-			}
+                    console.log("Raw summary array:", JSON.stringify(summaryArray, null, 2));
 
-			// Tytuł AI
-			const AI_generated_title = resultsArray[0]?.choice?.title;
+                    const resultsArray = [];
+                    console.log(`Formatuję wyniki AI...`);
 
-			// Przetwarzanie wszystkich elementów z każdego podsumowania
-			let chatResponse = resultsArray.reduce(
-				(acc, curr) => {
-					if (!curr.choice) return acc;
+                    for (let result of summaryArray) {
+                        console.log("Processing result:", JSON.stringify(result, null, 2));
+                        console.log("Message content:", result.choices[0].message.content);
 
-					acc.summary.push(curr.choice.summary || []);
-					acc.main_points.push(curr.choice.main_points || []);
-					acc.action_items.push(curr.choice.action_items || []);
-					acc.stories.push(curr.choice.stories || []);
-					acc.references.push(curr.choice.references || []);
-					acc.arguments.push(curr.choice.arguments || []);
-					acc.follow_up.push(curr.choice.follow_up || []);
-					acc.related_topics.push(curr.choice.related_topics || []);
-					acc.chapters.push(curr.choice.chapters || []);
-					acc.usageArray.push(curr.usage || 0);
+                        const response = {
+                            choice: this.repairJSON(result.choices[0].message.content),
+                            usage: !result.usage.total_tokens ? 0 : result.usage.total_tokens,
+                        };
+                        resultsArray.push(response);
+                    }
 
-					return acc;
-				},
-				{
-					title: AI_generated_title || "Bez tytułu",
-					summary: [],
-					main_points: [],
-					action_items: [],
-					stories: [],
-					references: [],
-					arguments: [],
-					follow_up: [],
-					related_topics: [],
-					chapters: [],
-					usageArray: [],
-				}
-			);
+                    // Tytuł AI
+                    const AI_generated_title = resultsArray[0]?.choice?.title;
 
-			// Funkcja sumująca
-			function arraySum(arr) {
-				return arr.reduce((a, b) => a + b, 0);
-			}
+                    // Przetwarzanie wszystkich elementów z każdego podsumowania
+                    let chatResponse = resultsArray.reduce(
+                        (acc, curr) => {
+                            if (!curr.choice) return acc;
 
-			// Filtrowanie powtórzeń
-			let filtered_related_topics = chatResponse.related_topics
-				.flat()
-				.filter(Boolean);
+                            acc.summary.push(curr.choice.summary || []);
+                            acc.main_points.push(curr.choice.main_points || []);
+                            acc.action_items.push(curr.choice.action_items || []);
+                            acc.stories.push(curr.choice.stories || []);
+                            acc.references.push(curr.choice.references || []);
+                            acc.arguments.push(curr.choice.arguments || []);
+                            acc.follow_up.push(curr.choice.follow_up || []);
+                            acc.related_topics.push(curr.choice.related_topics || []);
+                            acc.chapters.push(curr.choice.chapters || []);
+                            acc.usageArray.push(curr.usage || 0);
 
-			let filtered_related_set;
-			if (filtered_related_topics.length > 1) {
-				filtered_related_set = Array.from(
-					new Set(filtered_related_topics.map(item => item.toLowerCase()))
-				);
-			}
+                            return acc;
+                        },
+                        {
+                            title: AI_generated_title ?? "Bez tytułu",
+                            summary: [],
+                            main_points: [],
+                            action_items: [],
+                            stories: [],
+                            references: [],
+                            arguments: [],
+                            follow_up: [],
+                            related_topics: [],
+                            chapters: [],
+                            usageArray: [],
+                        }
+                    );
 
-			// Tworzenie finalnej odpowiedzi
-			const finalChatResponse = {
-				title: chatResponse.title,
-				summary: chatResponse.summary.join(" "),
-				main_points: chatResponse.main_points.flat(),
-				action_items: chatResponse.action_items.flat(),
-				stories: chatResponse.stories.flat(),
-				references: chatResponse.references.flat(),
-				arguments: chatResponse.arguments.flat(),
-				follow_up: chatResponse.follow_up.flat(),
-				...(this.opcje_podsumowania?.includes("Powiązane Tematy") &&
-					filtered_related_set?.length > 1 && {
-						related_topics: filtered_related_set.sort(),
-					}),
-				...(this.opcje_podsumowania?.includes("Rozdziały") && {
-					chapters: chatResponse.chapters.flat(),
-				}),
-				tokens: arraySum(chatResponse.usageArray),
-			};
+                    // Funkcja sumująca
+                    function arraySum(arr) {
+                        return arr.reduce((a, b) => a + b, 0);
+                    }
 
-			console.log(`Finalna odpowiedź gotowa`);
-			return finalChatResponse;
-		},
+                    // Filtrowanie powtórzeń
+                    let filtered_related_topics = chatResponse.related_topics
+                        .flat()
+                        .filter(Boolean);
+
+                    let filtered_related_set;
+                    if (filtered_related_topics.length > 1) {
+                        filtered_related_set = Array.from(
+                            new Set(filtered_related_topics.map(item => item.toLowerCase()))
+                        );
+                    }
+
+                    // Tworzenie finalnej odpowiedzi
+                    const finalChatResponse = {
+                        title: chatResponse.title,
+                        summary: chatResponse.summary.join(" "),
+                        main_points: chatResponse.main_points.flat(),
+                        action_items: chatResponse.action_items.flat(),
+                        stories: chatResponse.stories.flat(),
+                        references: chatResponse.references.flat(),
+                        arguments: chatResponse.arguments.flat(),
+                        follow_up: chatResponse.follow_up.flat(),
+                        ...(this.opcje_podsumowania?.includes("Powiązane Tematy") &&
+                            filtered_related_set?.length > 1 && {
+                                related_topics: filtered_related_set.sort(),
+                            }),
+                        ...(this.opcje_podsumowania?.includes("Rozdziały") && {
+                            chapters: chatResponse.chapters.flat(),
+                        }),
+                        tokens: arraySum(chatResponse.usageArray),
+                    };
+
+                    console.log(`Finalna odpowiedź gotowa`);
+                    return finalChatResponse;
+                }
 		
 		makeParagraphs(transcript, maxLength = 1200) {
 			const languageCode = franc(transcript);
