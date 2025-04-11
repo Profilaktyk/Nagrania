@@ -38,7 +38,7 @@ export default {
 	name: "Notatki Głosowe w Notion – PL",
 	description: "Transkrybuje pliki audio, tworzy podsumowanie i wysyła je do Notion.",
 	key: "notion-voice-notes-beta-pl",
-	version: "1.0.4",
+	version: "1.0.7",
 	type: "action",
 	props: {
 		notion: {
@@ -1185,6 +1185,8 @@ export default {
 				...(this.opcje_podsumowania?.includes("Powiązane Tematy") &&
 					filtered_related_set?.length > 1 && {
 						related_topics: filtered_related_set.sort(),
+						    topic => topic.charAt(0).toUpperCase() + topic.slice(1)
+				                ).sort(),
 					}),
                 ...(this.opcje_podsumowania?.includes("Rozdziały") && {
                     chapters: chatResponse.chapters.flat(),
@@ -1367,7 +1369,7 @@ export default {
 				noteTitle = AI_generated_title;
 			}
 			
-			meta.title = noteTitle;
+			meta.title = noteTitle.charAt(0).toUpperCase() + noteTitle.slice(1);
 
 			// Przygotowanie danych
 			meta.transcript = paragraphs.transcript;
@@ -1424,12 +1426,12 @@ export default {
 					}),
 					...(this.wlasciwoscCzasu && {
 						[this.wlasciwoscCzasu]: {
-							number: duration,
+							number: Math.floor(duration / 60),
 						},
 					}),
 					...(this.wlasciwoscKosztu && {
 						[this.wlasciwoscKosztu]: {
-							number: totalCost,
+							number: Number(cost.summary.toFixed(3)),
 						},
 					}),
 					...(this.wlasciwoscDaty && {
