@@ -1576,26 +1576,26 @@ export default {
 			}
 
 			const transcriptionCost = cost.transcript;
-			meta["transcription-cost"] = `Transcription Cost: $${cost.transcript
+			meta["transcription-cost"] = `Koszt transkrypcji: $${cost.transcript
 				.toFixed(3)
 				.toString()}`;
 			const chatCost = cost.summary;
-			meta["chat-cost"] = `Chat API Cost: $${cost.summary.toFixed(3).toString()}`;
+			meta["chat-cost"] = `Koszt API Chat: $${cost.summary.toFixed(3).toString()}`;
 			const totalCostArray = [cost.transcript, cost.summary];
 			if (cost.language_check) {
-				meta["language-check-cost"] = `Language Check Cost: $${cost.language_check
+				meta["language-check-cost"] = `Koszt sprawdzania języka: $${cost.language_check
 					.toFixed(3)
 					.toString()}`;
 				totalCostArray.push(cost.language_check);
 			}
 			if (cost.translated_transcript) {
-				meta["translation-cost"] = `Translation Cost: $${cost.translated_transcript
+				meta["translation-cost"] = `Koszt tłumaczenia: $${cost.translated_transcript
 					.toFixed(3)
 					.toString()}`;
 				totalCostArray.push(cost.translated_transcript);
 			}
 			const totalCost = totalCostArray.reduce((a, b) => a + b, 0);
-			meta["total-cost"] = `Total Cost: $${totalCost.toFixed(3).toString()}`;
+			meta["total-cost"] = `Całkowity koszt: $${totalCost.toFixed(3).toString()}`;
 
 			Object.keys(meta).forEach((key) => {
 				if (Array.isArray(meta[key])) {
@@ -1683,7 +1683,7 @@ export default {
 							rich_text: [
 								{
 									text: {
-										content: "This AI transcription/summary was created on ",
+										content: "Ta transkrypcja/podsumowanie AI zostało utworzone ",
 									},
 								},
 								{
@@ -1701,7 +1701,7 @@ export default {
 								},
 								{
 									text: {
-										content: "Listen to the original recording here.",
+										content: "Posłuchaj oryginalnego nagrania tutaj.",
 										link: {
 											url: config.fileLink,
 										},
@@ -1828,7 +1828,7 @@ export default {
 								{
 									text: {
 										content:
-											"These are potential arguments and rebuttals that other people may bring up in response to the transcript. Like every other part of this summary document, factual accuracy is not guaranteed.",
+											"To są potencjalne argumenty i kontrargumenty, które inne osoby mogłyby podnieść w odpowiedzi na transkrypt. Podobnie jak każda inna część tego dokumentu podsumowującego, dokładność faktów nie jest gwarantowana.",
 									},
 								},
 							],
