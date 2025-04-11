@@ -978,7 +978,10 @@ export default {
                             resultsArray.push({
                                 choice: {
                                     title: "Błąd przetwarzania odpowiedzi",
-                                    summary: "Nie udało się przetworzyć odpowiedzi od modelu AI."
+                                    summary: "Nie udało się przetworzyć odpowiedzi od modelu AI.",
+				    main_points: ["Brak danych"],
+				    action_items: ["Brak danych"],
+				    follow_up: ["Brak danych"]
                                 },
                                 usage: result.usage?.total_tokens || 0
                             });
