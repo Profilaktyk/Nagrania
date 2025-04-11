@@ -1172,7 +1172,7 @@ export default {
 				);
 			}
 
-			// Utwórz finalną odpowiedź z obsługą przypadków granicznych
+                        // Utwórz finalną odpowiedź z obsługą przypadków granicznych
 			const finalChatResponse = {
 				title: chatResponse.title || "Transkrypcja audio",
 				summary: chatResponse.summary.join(" ") || "Brak podsumowania",
@@ -1184,13 +1184,13 @@ export default {
 				follow_up: chatResponse.follow_up.flat().length > 0 ? chatResponse.follow_up.flat() : ["Brak pytań uzupełniających"],
 				...(this.opcje_podsumowania?.includes("Powiązane Tematy") &&
 					filtered_related_set?.length > 1 && {
-						related_topics: filtered_related_set.sort(),
-						    topic => topic.charAt(0).toUpperCase() + topic.slice(1)
-				                ).sort(),
+						related_topics: filtered_related_set
+							.map(topic => topic.charAt(0).toUpperCase() + topic.slice(1))
+							.sort(),
 					}),
-                ...(this.opcje_podsumowania?.includes("Rozdziały") && {
-                    chapters: chatResponse.chapters.flat(),
-                }),
+                ...(this.opcje_podsumowania?.includes("Rozdziały") && {
+                    chapters: chatResponse.chapters.flat(),
+                }),
 				tokens: arraySum(chatResponse.usageArray),
 			};
 
@@ -1369,7 +1369,7 @@ export default {
 				noteTitle = AI_generated_title;
 			}
 			
-			meta.title = noteTitle.charAt(0).toUpperCase() + noteTitle.slice(1);
+			meta.title = noteTitle.toLowerCase().charAt(0).toUpperCase() + noteTitle.toLowerCase().slice(1);
 
 			// Przygotowanie danych
 			meta.transcript = paragraphs.transcript;
@@ -1426,12 +1426,12 @@ export default {
 					}),
 					...(this.wlasciwoscCzasu && {
 						[this.wlasciwoscCzasu]: {
-							number: Math.floor(duration / 60),
+							 number: duration,
 						},
 					}),
 					...(this.wlasciwoscKosztu && {
 						[this.wlasciwoscKosztu]: {
-							number: Number(cost.summary.toFixed(3)),
+							 number: totalCost,
 						},
 					}),
 					...(this.wlasciwoscDaty && {
