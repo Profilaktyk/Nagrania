@@ -956,33 +956,34 @@ export default {
 			}
 		},
 		
-		async formatChat(summaryArray) {
-			console.log("Raw summary array:", JSON.stringify(summaryArray, null, 2));
-
-			// Dodaj sprawdzenie, czy summaryArray istnieje i nie jest pusty
-                        if (!summaryArray || summaryArray.length === 0) {
-                        console.error("summaryArray jest pusty lub undefined");
-                        return null;
-			}
-			
-			const resultsArray = [];
-			console.log(`Formatuję wyniki AI...`);
-			
-			for (let result of summaryArray) {
-				console.log("Processing result:", JSON.stringify(result, null, 2));
-				console.log("Message content:", result.choices[0].message.content);
-
-			    try {
-				const response = {
-					choice: this.repairJSON(result.choices[0].message.content),
-					usage: !result.usage.total_tokens ? 0 : result.usage.total_tokens,
-				};
-				resultsArray.push(response);
-			    } catch (error) {
-                                console.error("Błąd podczas przetwarzania wyniku:", error);
-                                console.error("Treść, która powoduje błąd:", result.choices[0].message.content);
-		            }
-			}
+                async formatChat(summaryArray) {
+                    console.log("Raw summary array:", JSON.stringify(summaryArray, null, 2));
+    
+                    const resultsArray = [];
+                    console.log(`Formatuję wyniki AI...`);
+                    
+                    for (let result of summaryArray) {
+                        console.log("Processing result:", JSON.stringify(result, null, 2));
+                        console.log("Message content:", result.choices[0].message.content);
+                        
+                        try {
+                            const response = {
+                                choice: this.repairJSON(result.choices[0].message.content || "{}"),
+                                usage: !result.usage.total_tokens ? 0 : result.usage.total_tokens,
+                            };
+                            resultsArray.push(response);
+                        } catch (error) {
+                            console.error(`Błąd przetwarzania odpowiedzi: ${error.message}`);
+                            // Dodaj pusty obiekt jako fallback
+                            resultsArray.push({
+                                choice: {
+                                    title: "Błąd przetwarzania odpowiedzi",
+                                    summary: "Nie udało się przetworzyć odpowiedzi od modelu AI."
+                                },
+                                usage: result.usage?.total_tokens || 0
+                            });
+                        }
+                    }
 
 			// Tytuł AI
 			const AI_generated_title = resultsArray[0]?.choice?.title;
