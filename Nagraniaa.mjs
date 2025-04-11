@@ -1184,10 +1184,10 @@ export default {
 				follow_up: chatResponse.follow_up.flat().length > 0 ? chatResponse.follow_up.flat() : ["Brak pytań uzupełniających"],
 				...(this.opcje_podsumowania?.includes("Powiązane Tematy") &&
 					filtered_related_set?.length > 1 && {
-						related_topics: filtered_related_set.sort(),
-						    topic => topic.charAt(0).toUpperCase() + topic.slice(1)
-				                ).sort(),
-					}),
+						related_topics: filtered_related_set.map(
+						  topic => topic.charAt(0).toUpperCase() + topic.slice(1)
+                                                ).sort(),
+					    }),
                 ...(this.opcje_podsumowania?.includes("Rozdziały") && {
                     chapters: chatResponse.chapters.flat(),
                 }),
