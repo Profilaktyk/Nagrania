@@ -388,8 +388,8 @@ export default {
 						label: "Summary Density (Advanced)",
 						description: `*It is recommended to leave this setting at its default unless you have a good understanding of how LLMs handle tokens.*\n\nSets the maximum number of tokens (word fragments) for each chunk of your transcript, and therefore the max number of user-prompt tokens that will be sent to your chosen LLM in each summarization request.\n\nA smaller number will result in a more "dense" summary, as the same summarization prompt will be run for a smaller chunk of the transcript – hence, more requests will be made, as the transcript will be split into more chunks.\n\nThis will enable the script to handle longer files, as the script uses concurrent requests, and your LLM will take less time to process a chunk with fewer prompt tokens.\n\nThis does mean your summary and list will be longer, as you'll get them for each chunk. You can somewhat counteract this with the **Summary Verbosity** option.\n\n**Lowering the number here will also *slightly* increase the cost of the summarization step**, both because you're getting more summarization data and because the summarization prompt's system instructions will be sent more times.\n\nDefaults to 2,750 tokens. The maximum value depends on your chosen model, and the minimum value is 500 tokens.\n\nKeep in mind that setting a very high value will result in a very sparse summary. (E.g. with Claude models, you could set a density as high as 150,000 tokens. But this workflow will output a maxiumum of 5 items per transcript chunk for most lists. That'd be 5 items to summarize *Moby Dick*. I recommend setting a lower density so your transcript is split into smaller chunks, each of which will be summarized.\n\nIf you're using an OpenAI trial account and haven't added your billing info yet, note that you may get rate-limited due to the low requests-per-minute (RPM) rate on trial accounts.`,
 						min: 500,
-						max: MODEL_INFO[this.ai_service.toLowerCase()].text[this.model.toLowerCase()].window
-							? MODEL_INFO[this.ai_service.toLowerCase()].text[this.model.toLowerCase()].window * .75
+						max: MODEL_INFO[this.ai_service.toLowerCase()].text[(this.ai_service === "Anthropic" ? this.anthropic_model : this.chat_model).toLowerCase()].window
+							? MODEL_INFO[this.ai_service.toLowerCase()].text[(this.ai_service === "Anthropic" ? this.anthropic_model : this.chat_model).toLowerCase()].window * .75
 							: 2750,
 						default: 2750,
 						optional: true,
@@ -841,7 +841,7 @@ export default {
 
 				// If diarization was enabled, count the speakers
 				let speakers = 1;
-				if (this.deepgram_options.includes('Diarize') && result.results.channels[0].alternatives[0].words && result.results.channels[0].alternatives[0].words.length > 0) {
+				if (this.deepgram_options && this.deepgram_options.includes('Diarize')) && result.results.channels[0].alternatives[0].words && result.results.channels[0].alternatives[0].words.length > 0) {
 					console.log(`Diarization enabled. Counting speakers. Transcript contains ${result.results.channels[0].alternatives[0].words.length} words.`)
 
 					const speakerIds = new Set()
@@ -1385,7 +1385,7 @@ export default {
 				internalDuration = duration;
 			}
 
-			const service_lower = (service || "openai").toLowerCase(); // Naprawa tutaj
+			const service_lower = (service || "openai").toLowerCase();
 
 			let plan = "completion"
 			let modelSize = "default"
@@ -1432,7 +1432,7 @@ export default {
 				throw new Error("Invalid usage object (thrown from calculateGPTCost).");
 			}
 
-			const service_lower = service.toLowerCase();
+			const service_lower = (service || "openai").toLowerCase();
 
 			if (!model || typeof model !== "string") {
 				throw new Error("Invalid model string (thrown from calculateGPTCost).");
@@ -2424,7 +2424,7 @@ export default {
 		// If user chose Deepgram and diarization, and if there are 2+ speakers, we'll use the diarized paragraph object from Deepgram instead of making paragraphs.
 
 		let transcript
-		if (this.transcription_service === "Deepgram" && this.deepgram_options.includes('Diarize') && fileInfo.deepgram.paragraphs && fileInfo.deepgram.speakers > 1) {
+		if (this.transcription_service === "Deepgram" && this.deepgram_options?.includes('Diarize') && fileInfo.deepgram.paragraphs && fileInfo.deepgram.speakers > 1) {
 			console.log(`Detected ${fileInfo.deepgram.speakers} speakers in the audio. Using Deepgram's diarized paragraphs for the transcript.`)
 			transcript = fileInfo.deepgram.paragraphs.split("\n\n").filter(line => line.trim() !== "")
 		} else {
