@@ -1385,7 +1385,7 @@ export default {
 				internalDuration = duration;
 			}
 
-			const service_lower = service.toLowerCase();
+			const service_lower = (service || "openai").toLowerCase(); // Naprawa tutaj
 
 			let plan = "completion"
 			let modelSize = "default"
@@ -2132,7 +2132,7 @@ export default {
 		this.setLanguages();
 
 		console.log("Setting the transcription service...");
-		config.transcription_service = this.transcription_service ?? "OpenAI";
+		config.transcription_service = (this.transcription_service || "OpenAI").toLowerCase();
 
 		const logSettings = {
 			"AI Service": this.ai_service,
