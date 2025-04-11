@@ -1610,7 +1610,7 @@ export default {
 							rich_text: [
 								{
 									text: {
-										content: "This AI transcription/summary was created on ",
+										content: "Ta transkrypcja i podsumowanie zostało utworzone ",
 									},
 								},
 								{
@@ -1628,7 +1628,7 @@ export default {
 								},
 								{
 									text: {
-										content: "Listen to the original recording here.",
+										content: "Podsłuchaj oryginalego nagrania tutaj.",
 										link: {
 											url: config.fileLink,
 										},
@@ -1641,7 +1641,7 @@ export default {
 							color: "blue_background",
 						},
 					}),
-					...(this.meta_options.includes("Table of Contents") && {
+					...(this.meta_options.includes("Spis treści") && {
 						table_of_contents: {
 							color: "default",
 						},
@@ -1652,7 +1652,7 @@ export default {
 			const responseHolder = {};
 
 			if (meta.long_summary) {
-				const summaryHeader = "Summary";
+				const summaryHeader = "Podsumowanie";
 
 				responseHolder.summary_header = summaryHeader;
 
@@ -1674,9 +1674,9 @@ export default {
 				language.summary &&
 				language.transcript.value !== language.summary.value
 			) {
-				transcriptHeaderValue = `Transcript (${language.transcript.label})`;
+				transcriptHeaderValue = `Transkrypt (${language.transcript.label})`;
 			} else {
-				transcriptHeaderValue = "Transcript";
+				transcriptHeaderValue = "Transkrypt";
 			}
 
 			responseHolder.transcript_header = transcriptHeaderValue;
@@ -1695,7 +1695,7 @@ export default {
 				paragraphs.translated_transcript &&
 				paragraphs.translated_transcript.length > 0
 			) {
-				const translationHeader = `Translated Transcript (${language.summary.label})`;
+				const translationHeader = `Przetranskrybowany transkrypt (${language.summary.label})`;
 
 				responseHolder.translation_header = translationHeader;
 
@@ -1724,7 +1724,7 @@ export default {
 					rich_text: [
 						{
 							text: {
-								content: "Additional Info",
+								content: "Dodatkowe informacje",
 							},
 						},
 					],
@@ -1748,14 +1748,14 @@ export default {
 
 				additionalInfoArray.push(infoHeader);
 
-				if (header === "Arguments and Areas for Improvement") {
+				if (header === "Argumenty i obszary do poprawy") {
 					const argWarning = {
 						callout: {
 							rich_text: [
 								{
 									text: {
 										content:
-											"These are potential arguments and rebuttals that other people may bring up in response to the transcript. Like every other part of this summary document, factual accuracy is not guaranteed.",
+											"To są potencjalne argumenty i kontrargumenty, które inne osoby mogłyby podnieść w odpowiedzi na transkrypt. Podobnie jak każda inna część tego dokumentu podsumowującego, dokładność faktów nie jest gwarantowana.",
 									},
 								},
 							],
@@ -1789,37 +1789,37 @@ export default {
 			const sections = [
 				{
 					arr: meta.main_points,
-					header: "Main Points",
+					header: "Główne punkty",
 					itemType: "bulleted_list_item",
 				},
 				{
 					arr: meta.stories,
-					header: "Stories and Examples",
+					header: "Historie i przykłady",
 					itemType: "bulleted_list_item",
 				},
 				{
 					arr: meta.references,
-					header: "References and Citations",
+					header: "Odniesienia i cytaty",
 					itemType: "bulleted_list_item",
 				},
 				{
 					arr: meta.action_items,
-					header: "Potential Action Items",
+					header: "Potencjalne elementy do wykonania",
 					itemType: "to_do",
 				},
 				{
 					arr: meta.follow_up,
-					header: "Follow-Up Questions",
+					header: "Pytania do dalszego rozpatrzenia",
 					itemType: "bulleted_list_item",
 				},
 				{
 					arr: meta.arguments,
-					header: "Arguments and Areas for Improvement",
+					header: "Argumenty i obszary do poprawy",
 					itemType: "bulleted_list_item",
 				},
 				{
 					arr: meta.related_topics,
-					header: "Related Topics",
+					header: "Powiązane tematy",
 					itemType: "bulleted_list_item",
 				},
 			];
@@ -1848,7 +1848,7 @@ export default {
 					metaArray.unshift(labeledSentiment);
 				}
 
-				additionalInfoHandler(metaArray, "Meta", "bulleted_list_item");
+				additionalInfoHandler(metaArray, "Dane", "bulleted_list_item");
 			}
 
 			responseHolder.additional_info = additionalInfoArray;
