@@ -37,7 +37,7 @@ export default {
 	name: "Notatki Głosowe w Notion – PL",
 	description: "Transkrybuje pliki audio, tworzy podsumowanie i wysyła je do Notion.",
 	key: "notion-voice-notes-beta-pl",
-	version: "1.0.0",
+	version: "1.0.2",
 	type: "action",
 	props: {
 		notion: {
