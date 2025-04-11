@@ -1184,10 +1184,10 @@ export default {
 				follow_up: chatResponse.follow_up.flat().length > 0 ? chatResponse.follow_up.flat() : ["Brak pytań uzupełniających"],
 				...(this.opcje_podsumowania?.includes("Powiązane Tematy") &&
 					filtered_related_set?.length > 1 && {
-						related_topics: filtered_related_set.map(
-						  topic => topic.charAt(0).toUpperCase() + topic.slice(1)
-                                                ).sort(),
-					    }),
+						related_topics: filtered_related_set.sort(),
+						    topic => topic.charAt(0).toUpperCase() + topic.slice(1)
+				                ).sort(),
+					}),
                 ...(this.opcje_podsumowania?.includes("Rozdziały") && {
                     chapters: chatResponse.chapters.flat(),
                 }),
@@ -1356,31 +1356,20 @@ export default {
 			const date = `${year}-${month}-${day}`;
 
 			const meta = formatted_chat;
-                        
-                        // Utworzenie tytułu na podstawie ustawień
-                        const AI_generated_title = formatted_chat.title;
-                        let noteTitle = "";
 
-                        if (this.wartoscTytulu == 'Oba ("Nazwa Pliku – Tytuł AI")') {
-                            noteTitle = `${config.fileName} – ${AI_generated_title}`;
-                        } else if (this.wartoscTytulu == "Nazwa Pliku") {
-                            noteTitle = config.fileName;
-                        } else {
-                            noteTitle = AI_generated_title;
-                        }
-
-                        // Zamiana tytułu na format zdania (pierwsza litera duża, reszta mała)
-                        meta.title = noteTitle
-                            .toLowerCase() // najpierw cały tekst na małe litery
-                            .split(' ') // podziel na słowa
-                            .map((word, index) => {
-                                // Pierwsza litera pierwszego słowa duża
-                                if (index === 0) {
-                                    return word.charAt(0).toUpperCase() + word.slice(1);
-                                }
-                                return word;
-                            })
-                            .join(' '); // połącz z powrotem
+			// Utworzenie tytułu na podstawie ustawień
+			const AI_generated_title = formatted_chat.title;
+			let noteTitle = "";
+			
+			if (this.wartoscTytulu == 'Oba ("Nazwa Pliku – Tytuł AI")') {
+				noteTitle = `${config.fileName} – ${AI_generated_title}`;
+			} else if (this.wartoscTytulu == "Nazwa Pliku") {
+				noteTitle = config.fileName;
+			} else {
+				noteTitle = AI_generated_title;
+			}
+			
+			meta.title = noteTitle.charAt(0).toUpperCase() + noteTitle.slice(1);
 
 			// Przygotowanie danych
 			meta.transcript = paragraphs.transcript;
