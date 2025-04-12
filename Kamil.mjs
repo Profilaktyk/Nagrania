@@ -52,7 +52,7 @@ export default {
     name: "Notatki głosowe do Notion",
     description: "Transkrybuje pliki audio, tworzy podsumowanie i wysyła je do Notion.",
     key: "notion-notatki-glosowe",
-    version: "1.0.2",
+    version: "1.0.0",
     type: "action",
     props: {
         steps: {
@@ -66,60 +66,7 @@ export default {
             app: "notion",
             description: `⬆ Nie zapomnij połączyć swojego konta Notion! Upewnij się, że nadałeś dostęp do bazy danych Notatek lub strony, która ją zawiera.`,
         },
-        databaseID: common.props.databaseID,
-        usluga_ai: {
-            type: "string",
-            label: "Usługa AI",
-            description: "Wybierz usługę AI. Domyślnie OpenAI.",
-            options: ["OpenAI", "Anthropic"],
-            default: "OpenAI",
-            reloadProps: true,
-        },
-        wlasne_polecenia_ai: {
-            type: "string",
-            label: "Własne polecenia dla AI",
-            description: "Wprowadź własne polecenie dla modelu AI, np. 'Podaj 3 pomysły na...'. Wyniki zostaną dodane jako osobna sekcja.",
-            optional: true,
-        },
-        prompt_whisper: {
-            type: "string",
-            label: "Prompt Whisper (opcjonalnie)",
-            description: `Możesz wpisać prompt, który pomoże modelowi transkrypcji. Domyślnie prompt to "Witaj, witaj na moim wykładzie.", co poprawia interpunkcję.`,
-            optional: true,
-        },
-        opcje_meta: {
-            type: "string[]",
-            label: "Co ma znaleźć się na stronie",
-            description: `Wybierz elementy, które mają zostać dodane do strony Notion.`,
-            options: [
-                "Górny dymek",
-                "Spis treści",
-                "Meta",
-            ],
-            default: ["Górny dymek", "Spis treści", "Meta"],
-        },
-    },
-async additionalProps() {
-        // Dodatkowe właściwości zależne od wybranych opcji
-        const props = {};
-        
-        // Wstępne właściwości
-        props.steps = {
-            type: "object",
-            label: "Dane poprzedniego kroku (domyślnie ustawione)",
-            description: `Te dane są automatycznie przekazywane z poprzednich kroków. Wartość domyślna to **{{steps}}** i nie powinieneś jej zmieniać.`,
-            optional: false,
-        };
-        
-        // Konto Notion
-        props.notion = {
-            type: "app",
-            app: "notion",
-            description: `⬆ Nie zapomnij połączyć swojego konta Notion! Upewnij się, że nadałeś dostęp do bazy danych Notatek lub strony, która ją zawiera.`,
-        };
-        
-        // Baza danych Notion
-        props.databaseID = {
+        databaseID: {
             type: "string",
             label: "Baza danych Notatki",
             description: "Wybierz bazę danych Notion.",
@@ -190,9 +137,13 @@ async additionalProps() {
                 }
             },
             reloadProps: true,
-        };
-
-        // Usługa AI
+        },
+    },
+    
+    async additionalProps() {
+        const props = {};
+        
+        // Usługa AI - podstawowa opcja
         props.usluga_ai = {
             type: "string",
             label: "Usługa AI",
@@ -201,55 +152,28 @@ async additionalProps() {
             default: "OpenAI",
             reloadProps: true,
         };
-
+        
         // Konta i modele AI w zależności od wybranej usługi
         if (this.usluga_ai === "OpenAI") {
             props.openai = {
                 type: "app",
                 app: "openai",
-                description: `**Ważne:** Jeśli korzystasz z darmowego kredytu próbnego OpenAI, Twój klucz API może mieć ograniczenia i nie obsłuży dłuższych plików. Zalecam ustawienie informacji rozliczeniowych w OpenAI.`,
+                description: `**Ważne:** Jeśli korzystasz z darmowego kredytu próbnego OpenAI, Twój klucz API może mieć ograniczenia i nie obsłuży dłuższych plików.`,
             };
             
-            let openaiModels = [];
-            try {
-                if (this.openai) {
-                    const openai = new OpenAI({
-                        apiKey: this.openai.$auth.api_key,
-                    });
-                    const response = await openai.models.list();
-
-                    const initialResults = response.data.filter(model => model.id.includes("gpt"))
-                        .sort((a, b) => a.id.localeCompare(b.id));
-
-                    const preferredModels = ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo", "gpt-4-turbo"];
-                    const preferredItems = [];
-                    
-                    for (const model of preferredModels) {
-                        const index = initialResults.findIndex(result => result.id === model);
-                        if (index !== -1) {
-                            preferredItems.push(initialResults.splice(index, 1)[0]);
-                        }
-                    }
-
-                    openaiModels = [...preferredItems, ...initialResults];
-                }
-            } catch (err) {
-                console.error(`Błąd OpenAI: ${err} – Sprawdź swój klucz API.`);
-            }
-            
-            if (openaiModels.length > 0) {
-                props.model_chat = {
-                    type: "string",
-                    label: "Model ChatGPT",
-                    description: `Wybierz model. Domyślnie **gpt-3.5-turbo**.`,
-                    default: "gpt-3.5-turbo",
-                    options: openaiModels.map(model => ({
-                        label: model.id,
-                        value: model.id,
-                    })),
-                    optional: true,
-                };
-            }
+            // Statyczna lista modelów OpenAI
+            props.model_chat = {
+                type: "string",
+                label: "Model ChatGPT",
+                description: `Wybierz model. Domyślnie **gpt-3.5-turbo**.`,
+                default: "gpt-3.5-turbo",
+                options: [
+                    { label: "GPT-3.5 Turbo", value: "gpt-3.5-turbo" },
+                    { label: "GPT-4o", value: "gpt-4o" },
+                    { label: "GPT-4o Mini", value: "gpt-4o-mini" },
+                    { label: "GPT-4 Turbo", value: "gpt-4-turbo-preview" }
+                ],
+            };
         } else if (this.usluga_ai === "Anthropic") {
             props.anthropic = {
                 type: "app",
@@ -301,7 +225,7 @@ async additionalProps() {
             default: ["Górny dymek", "Spis treści", "Meta"],
         };
 
-        // Przygotowanie właściwości Notion, jeśli dostępna baza danych
+        // Jeśli mamy bazę danych Notion
         if (this.notion && this.databaseID) {
             try {
                 const notion = new Client({
@@ -539,9 +463,7 @@ async additionalProps() {
                         label: "Język transkrypcji (opcjonalnie)",
                         description: `Wybierz preferowany język wyjściowy. Whisper spróbuje przetłumaczyć audio na ten język.
                         
-                        Jeśli nie znasz języka pliku, możesz zostawić to pole puste, a Whisper spróbuje wykryć język i zapisać transkrypcję w tym samym języku.
-                        
-                        Ta opcja obsługuje tylko języki obsługiwane przez model Whisper.`,
+                        Jeśli nie znasz języka pliku, możesz zostawić to pole puste, a Whisper spróbuje wykryć język i zapisać transkrypcję w tym samym języku.`,
                         optional: true,
                         options: lang.LANGUAGES.map((lang) => ({
                             label: lang.label,
