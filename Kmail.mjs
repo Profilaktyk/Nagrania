@@ -2632,6 +2632,172 @@ export default {
 		if (this.jezyk_podsumowania || this.jezyk_tytulu) {
 			console.log(`Sprawdzam język transkrypcji...`);
 
-			// Wykryj język transkrypcji
+                        // Wykryj język transkrypcji
 			const detectedLanguage = await this.detectLanguage(
 				llm,
+				this.usluga_ai,
+				this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+				fileInfo.paragraphs.transcript[0]
+			);
+
+			fileInfo.language = {
+				transcript: await this.formatDetectedLanguage(
+					detectedLanguage.choices[0].message.content
+				),
+				summary: this.jezyk_podsumowania
+					? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
+					: "Nie ustawiono",
+                title: this.jezyk_tytulu
+                    ? lang.LANGUAGES.find((l) => l.value === this.jezyk_tytulu)
+                    : (this.jezyk_podsumowania
+                        ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
+                        : "Nie ustawiono")
+			};
+
+			console.log("Informacje o językach:", JSON.stringify(fileInfo.language, null, 2));
+
+			const languageCheckUsage = {
+				prompt_tokens: detectedLanguage.usage.prompt_tokens,
+				completion_tokens: detectedLanguage.usage.completion_tokens,
+			};
+
+			fileInfo.cost.language_check = await this.calculateGPTCost(
+				languageCheckUsage,
+				this.usluga_ai,
+				"text",
+				this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+				"Sprawdzanie języka"
+			);
+
+			// Tłumaczenie transkrypcji, jeśli opcja została włączona i języki są różne
+			if (this.przetlumacz_transkrypcje?.includes("Przetłumacz") &&
+				fileInfo.language.transcript.value !== fileInfo.language.summary.value) {
+				console.log(
+					`Język transkrypcji (${fileInfo.language.transcript.label}) różni się od języka podsumowania (${fileInfo.language.summary.label}). Tłumaczę transkrypcję...`
+				);
+
+				const translatedTranscript = await this.translateParagraphs(
+					llm,
+					this.usluga_ai,
+					this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+					fileInfo.paragraphs.transcript,
+					fileInfo.language.summary,
+					this.temperatura || 2
+				);
+
+				fileInfo.paragraphs.translated_transcript = this.makeParagraphs(
+					translatedTranscript.paragraphs.join(" "),
+					1200
+				);
+				
+				fileInfo.cost.translated_transcript = await this.calculateGPTCost(
+					translatedTranscript.usage,
+					this.usluga_ai,
+					"text",
+					translatedTranscript.model,
+					"Tłumaczenie"
+				);
+
+				stageDurations.translation = Number(process.hrtime.bigint() - previousTime) / 1e6;
+				console.log(`Czas tłumaczenia: ${stageDurations.translation}ms (${stageDurations.translation / 1000}s)`);
+				previousTime = process.hrtime.bigint();
+			}
+            
+            // Tłumaczenie tytułu, jeśli to potrzebne
+            if (this.jezyk_tytulu && 
+                fileInfo.language.transcript.value !== fileInfo.language.title.value && 
+                fileInfo.formatted_chat.title) {
+                console.log(
+                    `Język transkrypcji (${fileInfo.language.transcript.label}) różni się od języka tytułu (${fileInfo.language.title.label}). Tłumaczę tytuł...`
+                );
+                
+                // Systemowy prompt dla tłumaczenia tytułu
+                const titleSystemPrompt = `Przetłumacz następujący tytuł na język ${fileInfo.language.title.label} (kod: "${fileInfo.language.title.value}"). 
+                Zwróć tylko przetłumaczony tytuł, bez żadnych dodatkowych wyjaśnień czy komentarzy.`;
+                
+                try {
+                    let translatedTitleResponse;
+                    
+                    if (this.usluga_ai === "OpenAI") {
+                        translatedTitleResponse = await openai.chat.completions.create({
+                            model: this.model_chat || "gpt-3.5-turbo",
+                            messages: [
+                                {
+                                    role: "system",
+                                    content: titleSystemPrompt,
+                                },
+                                {
+                                    role: "user",
+                                    content: fileInfo.formatted_chat.title,
+                                },
+                            ],
+                            temperature: (this.temperatura || 2) / 10,
+                        });
+                        
+                        fileInfo.formatted_chat.title = translatedTitleResponse.choices[0].message.content.trim();
+                    } else if (this.usluga_ai === "Anthropic") {
+                        translatedTitleResponse = await anthropic.messages.create({
+                            model: this.model_anthropic || "claude-3-5-haiku-20241022",
+                            max_tokens: 100,
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: fileInfo.formatted_chat.title,
+                                }
+                            ],
+                            system: titleSystemPrompt,
+                            temperature: (this.temperatura || 2) / 10,
+                        });
+                        
+                        fileInfo.formatted_chat.title = translatedTitleResponse.content[0].text.trim();
+                    }
+                    
+                    console.log(`Tytuł przetłumaczony na ${fileInfo.language.title.label}: ${fileInfo.formatted_chat.title}`);
+                } catch (error) {
+                    console.error(`Błąd podczas tłumaczenia tytułu: ${error.message}`);
+                    // Nie przerywamy działania, jeśli tłumaczenie tytułu się nie powiedzie
+                }
+            }
+		}
+
+		/* -- Etap tworzenia strony w Notion -- */
+		fileInfo.notion_response = await this.createNotionPage(
+			this.steps,
+			notion,
+			fileInfo.duration,
+			fileInfo.formatted_chat,
+			fileInfo.paragraphs,
+			fileInfo.cost,
+			fileInfo.language
+		);
+
+		stageDurations.notionCreation = Number(process.hrtime.bigint() - previousTime) / 1e6;
+		console.log(`Czas tworzenia strony: ${stageDurations.notionCreation}ms (${stageDurations.notionCreation / 1000}s)`);
+		previousTime = process.hrtime.bigint();
+
+		/* -- Etap aktualizacji strony Notion -- */
+		fileInfo.updated_notion_response = await this.updateNotionPage(
+			notion,
+			fileInfo.notion_response
+		);
+
+		console.log(`Informacje pomyślnie dodane do Notion.`);
+
+		stageDurations.notionUpdate = Number(process.hrtime.bigint() - previousTime) / 1e6;
+		console.log(`Czas aktualizacji: ${stageDurations.notionUpdate}ms (${stageDurations.notionUpdate / 1000}s)`);
+
+        // Podsumowanie czasu wykonania
+		stageDurations.total = totalDuration(stageDurations);
+		fileInfo.performance = stageDurations;
+		fileInfo.performance_formatted = Object.fromEntries(
+			Object.entries(fileInfo.performance).map(([stageName, stageDuration]) => [
+				stageName,
+				stageDuration > 1000
+					? `${(stageDuration / 1000).toFixed(2)} sekund`
+					: `${stageDuration.toFixed(2)}ms`,
+			])
+		);
+
+		return fileInfo;
+	},
+}
