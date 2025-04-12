@@ -52,7 +52,7 @@ export default {
     name: "Notatki głosowe do Notion",
     description: "Transkrybuje pliki audio, tworzy podsumowanie i wysyła je do Notion.",
     key: "notion-notatki-glosowe",
-    version: "1.0.0",
+    version: "1.0.5",
     type: "action",
     props: {
         steps: {
@@ -60,10 +60,12 @@ export default {
             label: "Dane poprzedniego kroku (domyślnie ustawione)",
             description: `Te dane są automatycznie przekazywane z poprzednich kroków. Wartość domyślna to **{{steps}}** i nie powinieneś jej zmieniać.`,
             optional: false,
+            default: "{{steps}}"
         },
         notion: {
             type: "app",
             app: "notion",
+            label: "Konto Notion",
             description: `⬆ Nie zapomnij połączyć swojego konta Notion! Upewnij się, że nadałeś dostęp do bazy danych Notatek lub strony, która ją zawiera.`,
         },
         databaseID: {
@@ -143,6 +145,14 @@ export default {
     async additionalProps() {
         const props = {};
         
+        // Prompt Whisper (przesuniete na górę, po bazie danych)
+        props.prompt_whisper = {
+            type: "string",
+            label: "Prompt Whisper (opcjonalnie)",
+            description: `Możesz wpisać prompt, który pomoże modelowi transkrypcji. Domyślnie prompt to "Witaj, witaj na moim wykładzie.", co poprawia interpunkcję.`,
+            optional: true,
+        };
+        
         // Usługa AI - podstawowa opcja
         props.usluga_ai = {
             type: "string",
@@ -158,6 +168,7 @@ export default {
             props.openai = {
                 type: "app",
                 app: "openai",
+                label: "Konto OpenAI",
                 description: `**Ważne:** Jeśli korzystasz z darmowego kredytu próbnego OpenAI, Twój klucz API może mieć ograniczenia i nie obsłuży dłuższych plików.`,
             };
             
@@ -178,6 +189,7 @@ export default {
             props.anthropic = {
                 type: "app",
                 app: "anthropic",
+                label: "Konto Anthropic",
                 description: "Musisz mieć ustawioną metodę płatności w Anthropic.",
             };
             
@@ -197,18 +209,11 @@ export default {
             };
         }
         
-        // Własne polecenia AI i prompt Whisper (zawsze widoczne)
+        // Własne polecenia AI (zawsze widoczne)
         props.wlasne_polecenia_ai = {
             type: "string",
             label: "Własne polecenia dla AI (opcjonalnie)",
             description: "Wprowadź własne polecenie dla modelu AI, np. 'Podaj 3 pomysły na...'. Wyniki zostaną dodane jako osobna sekcja.",
-            optional: true,
-        };
-        
-        props.prompt_whisper = {
-            type: "string",
-            label: "Prompt Whisper (opcjonalnie)",
-            description: `Możesz wpisać prompt, który pomoże modelowi transkrypcji. Domyślnie prompt to "Witaj, witaj na moim wykładzie.", co poprawia interpunkcję.`,
             optional: true,
         };
         
@@ -291,14 +296,17 @@ export default {
                 };
                 
                 if (this.wlasciwoscTagu) {
+                    // Pobierz opcje tagów z bazy danych
+                    const tagOptions = properties[this.wlasciwoscTagu].select.options.map(option => ({
+                        label: option.name,
+                        value: option.name,
+                    }));
+                    
                     props.wartoscTagu = {
                         type: "string",
                         label: "Wartość tagu",
                         description: "Wybierz wartość dla tagu notatki.",
-                        options: properties[this.wlasciwoscTagu].select.options.map(option => ({
-                            label: option.name,
-                            value: option.name,
-                        })),
+                        options: tagOptions,
                         default: "🎙️ Nagranie",
                         optional: true,
                         reloadProps: true,
@@ -336,7 +344,7 @@ export default {
                 
                 let defaultSummaryOptions;
                 
-                if (this.wartoscTagu && this.wartoscTagu === "🎙️ Nagranie") {
+                if (this.wartoscTagu === "🎙️ Nagranie") {
                     defaultSummaryOptions = [
                         "Podsumowanie", 
                         "Główne punkty", 
@@ -347,7 +355,7 @@ export default {
                         "Powiązane tematy",
                         "Rozdziały"
                     ];
-                } else if (this.wartoscTagu && this.wartoscTagu === "📓 Dziennik") {
+                } else if (this.wartoscTagu === "📓 Dziennik") {
                     defaultSummaryOptions = [
                         "Ogólny opis dnia",
                         "Kluczowe wydarzenia",
@@ -501,11 +509,46 @@ export default {
                         props.przetlumacz_transkrypcje = {
                             type: "string",
                             label: "Dodaj tłumaczenie (transkrypcja)",
-                            description: `Wybierz opcję, jeśli chcesz, aby model AI przetłumaczył transkrypcję na wybrany język podsumowania. 
+                            description: `Wybierz opcję, jeśli chcesz, aby model AI przetłumaczył transkrypcję na wybrany język podsumowania.
                             
-                            Przykłady:
-                            - Transkrypcja po angielsku, język podsumowania polski → transkrypcja będzie przetłumaczona na polski
-                            - Transkrypcja po polsku, język podsumowania angielski → transkrypcja będzie przetłumaczona na angielski
+                            Oto scenariusze tłumaczenia (na przykładzie języka polskiego i angielskiego):
+
+                            Scenariusz 1: Tylko transkrypcja po angielsku
+                            * Język transkrypcji: polski
+                            * Język podsumowania: angielski
+                            * Opcja: "Przetłumacz tylko"
+                            Efekt: 
+                            * Transkrypcja zostanie przetłumaczona na angielski
+                            * Podsumowanie będzie w języku angielskim
+                            * W Notion pojawi się tylko angielska wersja
+
+                            Scenariusz 2: Tylko podsumowanie po angielsku
+                            * Język transkrypcji: polski
+                            * Język podsumowania: angielski
+                            * Opcja: "Nie tłumacz"
+                            Efekt:
+                            * Transkrypcja pozostanie w języku polskim
+                            * Podsumowanie będzie w języku angielskim
+                            * W Notion pozostanie tylko polska wersja transkrypcji
+
+                            Scenariusz 3: Wszystko po angielsku z zachowaniem oryginału
+                            * Język transkrypcji: polski
+                            * Język podsumowania: angielski
+                            * Opcja: "Przetłumacz i zachowaj oryginał"
+                            Efekt:
+                            * Oryginalna transkrypcja pozostanie po polsku
+                            * Dodatkowo będzie pełne tłumaczenie transkrypcji na angielski
+                            * Podsumowanie w języku angielskim
+                            * W Notion pojawi się zarówno oryginalna, jak i przetłumaczona wersja
+
+                            Scenariusz 4: Bez tłumaczenia
+                            * Język transkrypcji: polski
+                            * Język podsumowania: polski
+                            * Opcja tłumaczenia: dowolna
+                            Efekt:
+                            * Transkrypcja w języku polskim
+                            * Podsumowanie w języku polskim
+                            * Tłumaczenie nie nastąpi, bo oba języki są takie same
                             
                             Tłumaczenie nastąpi tylko wtedy, gdy wykryty język transkrypcji różni się od wybranego języka podsumowania.`,
                             optional: true,
