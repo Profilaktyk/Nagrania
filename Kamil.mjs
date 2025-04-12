@@ -52,7 +52,7 @@ export default {
     name: "Notatki głosowe do Notion",
     description: "Transkrybuje pliki audio, tworzy podsumowanie i wysyła je do Notion.",
     key: "notion-notatki-glosowe",
-    version: "1.0.1",
+    version: "1.0.2",
     type: "action",
     props: {
         steps: {
@@ -103,208 +103,328 @@ async additionalProps() {
         // Dodatkowe właściwości zależne od wybranych opcji
         const props = {};
         
-        // Notion konto i baza danych
-        if (this.notion) {
+        // Wstępne właściwości
+        props.steps = {
+            type: "object",
+            label: "Dane poprzedniego kroku (domyślnie ustawione)",
+            description: `Te dane są automatycznie przekazywane z poprzednich kroków. Wartość domyślna to **{{steps}}** i nie powinieneś jej zmieniać.`,
+            optional: false,
+        };
+        
+        // Konto Notion
+        props.notion = {
+            type: "app",
+            app: "notion",
+            description: `⬆ Nie zapomnij połączyć swojego konta Notion! Upewnij się, że nadałeś dostęp do bazy danych Notatek lub strony, która ją zawiera.`,
+        };
+        
+        // Baza danych Notion
+        props.databaseID = {
+            type: "string",
+            label: "Baza danych Notatki",
+            description: "Wybierz bazę danych Notion.",
+            async options({ query, prevContext }) {
+                if (this.notion) {
+                    try {
+                        const notion = new Client({
+                            auth: this.notion.$auth.oauth_access_token,
+                        });
+
+                        let start_cursor = prevContext?.cursor;
+
+                        const response = await notion.search({
+                            ...(query ? { query } : {}),
+                            ...(start_cursor ? { start_cursor } : {}),
+                            page_size: 50,
+                            filter: {
+                                value: "database",
+                                property: "object",
+                            },
+                            sorts: [
+                                {
+                                    direction: "descending",
+                                    property: "last_edited_time",
+                                },
+                            ],
+                        });
+
+                        let allTasksDbs = response.results.filter((db) =>
+                            db.title?.[0]?.plain_text.includes("All Notes")
+                        );
+                        let nonTaskDbs = response.results.filter(
+                            (db) => !db.title?.[0]?.plain_text.includes("All Notes")
+                        );
+                        let sortedDbs = [...allTasksDbs, ...nonTaskDbs];
+                        const UTregex = /All Notes/;
+                        const UTLabel = " – (używane w Ultimate Notes)";
+                        const UBregex = /All Notes \[\w*\]/;
+                        const UBLabel = " – (używane w Ultimate Brain)";
+                        const options = sortedDbs.map((db) => ({
+                            label: UBregex.test(db.title?.[0]?.plain_text)
+                                ? db.title?.[0]?.plain_text + UBLabel
+                                : UTregex.test(db.title?.[0]?.plain_text)
+                                ? db.title?.[0]?.plain_text + UTLabel
+                                : db.title?.[0]?.plain_text,
+                            value: db.id,
+                        }));
+
+                        return {
+                            context: {
+                                cursor: response.next_cursor,
+                            },
+                            options,
+                        };
+                    } catch (error) {
+                        console.error(error);
+                        return {
+                            context: {
+                                cursor: null,
+                            },
+                            options: [],
+                        };
+                    }
+                } else {
+                    return {
+                        options: ["Najpierw połącz swoje konto Notion."],
+                    };
+                }
+            },
+            reloadProps: true,
+        };
+
+        // Usługa AI
+        props.usluga_ai = {
+            type: "string",
+            label: "Usługa AI",
+            description: "Wybierz usługę AI. Domyślnie OpenAI.",
+            options: ["OpenAI", "Anthropic"],
+            default: "OpenAI",
+            reloadProps: true,
+        };
+
+        // Konta i modele AI w zależności od wybranej usługi
+        if (this.usluga_ai === "OpenAI") {
+            props.openai = {
+                type: "app",
+                app: "openai",
+                description: `**Ważne:** Jeśli korzystasz z darmowego kredytu próbnego OpenAI, Twój klucz API może mieć ograniczenia i nie obsłuży dłuższych plików. Zalecam ustawienie informacji rozliczeniowych w OpenAI.`,
+            };
+            
+            let openaiModels = [];
+            try {
+                if (this.openai) {
+                    const openai = new OpenAI({
+                        apiKey: this.openai.$auth.api_key,
+                    });
+                    const response = await openai.models.list();
+
+                    const initialResults = response.data.filter(model => model.id.includes("gpt"))
+                        .sort((a, b) => a.id.localeCompare(b.id));
+
+                    const preferredModels = ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo", "gpt-4-turbo"];
+                    const preferredItems = [];
+                    
+                    for (const model of preferredModels) {
+                        const index = initialResults.findIndex(result => result.id === model);
+                        if (index !== -1) {
+                            preferredItems.push(initialResults.splice(index, 1)[0]);
+                        }
+                    }
+
+                    openaiModels = [...preferredItems, ...initialResults];
+                }
+            } catch (err) {
+                console.error(`Błąd OpenAI: ${err} – Sprawdź swój klucz API.`);
+            }
+            
+            if (openaiModels.length > 0) {
+                props.model_chat = {
+                    type: "string",
+                    label: "Model ChatGPT",
+                    description: `Wybierz model. Domyślnie **gpt-3.5-turbo**.`,
+                    default: "gpt-3.5-turbo",
+                    options: openaiModels.map(model => ({
+                        label: model.id,
+                        value: model.id,
+                    })),
+                    optional: true,
+                };
+            }
+        } else if (this.usluga_ai === "Anthropic") {
+            props.anthropic = {
+                type: "app",
+                app: "anthropic",
+                description: "Musisz mieć ustawioną metodę płatności w Anthropic.",
+            };
+            
+            props.model_anthropic = {
+                type: "string",
+                label: "Model Anthropic",
+                description: "Wybierz model Anthropic. Domyślnie claude-3-5-haiku-20241022.",
+                default: "claude-3-5-haiku-20241022",
+                options: [
+                    "claude-3-5-haiku-20241022",
+                    "claude-3-5-sonnet-20241022",
+                    "claude-3-7-sonnet-20250219",
+                    "claude-3-sonnet-20240229",
+                    "claude-3-opus-20240229",
+                    "claude-3-haiku-20240307"
+                ],
+            };
+        }
+        
+        // Własne polecenia AI i prompt Whisper (zawsze widoczne)
+        props.wlasne_polecenia_ai = {
+            type: "string",
+            label: "Własne polecenia dla AI (opcjonalnie)",
+            description: "Wprowadź własne polecenie dla modelu AI, np. 'Podaj 3 pomysły na...'. Wyniki zostaną dodane jako osobna sekcja.",
+            optional: true,
+        };
+        
+        props.prompt_whisper = {
+            type: "string",
+            label: "Prompt Whisper (opcjonalnie)",
+            description: `Możesz wpisać prompt, który pomoże modelowi transkrypcji. Domyślnie prompt to "Witaj, witaj na moim wykładzie.", co poprawia interpunkcję.`,
+            optional: true,
+        };
+        
+        // Co ma znaleźć się na stronie
+        props.opcje_meta = {
+            type: "string[]",
+            label: "Co ma znaleźć się na stronie",
+            description: `Wybierz elementy, które mają zostać dodane do strony Notion.`,
+            options: [
+                "Górny dymek",
+                "Spis treści",
+                "Meta",
+            ],
+            default: ["Górny dymek", "Spis treści", "Meta"],
+        };
+
+        // Przygotowanie właściwości Notion, jeśli dostępna baza danych
+        if (this.notion && this.databaseID) {
             try {
                 const notion = new Client({
                     auth: this.notion.$auth.oauth_access_token,
                 });
                 
-                // Pobierz bazę danych i jej właściwości
-                if (this.databaseID) {
-                    const database = await notion.databases.retrieve({
-                        database_id: this.databaseID,
-                    });
-                    
-                    const properties = database.properties;
-                    
-                    // Pobierz typy właściwości
-                    const titleProps = Object.keys(properties).filter(k => properties[k].type === "title");
-                    const numberProps = Object.keys(properties).filter(k => properties[k].type === "number");
-                    const selectProps = Object.keys(properties).filter(k => properties[k].type === "select");
-                    const dateProps = Object.keys(properties).filter(k => properties[k].type === "date");
-                    const textProps = Object.keys(properties).filter(k => properties[k].type === "rich_text");
-                    const urlProps = Object.keys(properties).filter(k => properties[k].type === "url");
-                    const filesProps = Object.keys(properties).filter(k => properties[k].type === "files");
-                    
-                    // Obsługa usługi AI
-                    props.usluga_ai = {
+                const database = await notion.databases.retrieve({
+                    database_id: this.databaseID,
+                });
+                
+                const properties = database.properties;
+                
+                // Pobierz typy właściwości
+                const titleProps = Object.keys(properties).filter(k => properties[k].type === "title");
+                const numberProps = Object.keys(properties).filter(k => properties[k].type === "number");
+                const selectProps = Object.keys(properties).filter(k => properties[k].type === "select");
+                const dateProps = Object.keys(properties).filter(k => properties[k].type === "date");
+                const textProps = Object.keys(properties).filter(k => properties[k].type === "rich_text");
+                const urlProps = Object.keys(properties).filter(k => properties[k].type === "url");
+                const filesProps = Object.keys(properties).filter(k => properties[k].type === "files");
+                
+                // Właściwości Notion
+                props.tytulNotatki = {
+                    type: "string",
+                    label: "Tytuł notatki (wymagane)",
+                    description: `Wybierz właściwość tytułu dla notatek. Domyślnie nazywa się **Name**.`,
+                    options: titleProps.map(prop => ({ label: prop, value: prop })),
+                    optional: false,
+                    reloadProps: true,
+                };
+                
+                if (this.tytulNotatki) {
+                    props.wartoscTytulu = {
                         type: "string",
-                        label: "Usługa AI",
-                        description: "Wybierz usługę AI. Domyślnie OpenAI.",
-                        options: ["OpenAI", "Anthropic"],
-                        default: "OpenAI",
-                        reloadProps: true,
-                    };
-                    
-                    // OpenAI lub Anthropic
-                    if (this.usluga_ai === "OpenAI") {
-                        props.openai = {
-                            type: "app",
-                            app: "openai",
-                            description: `**Ważne:** Jeśli korzystasz z darmowego kredytu próbnego OpenAI, Twój klucz API może mieć ograniczenia i nie obsłuży dłuższych plików. Zalecam ustawienie informacji rozliczeniowych w OpenAI.`,
-                        };
-                        
-                        let openaiModels = [];
-                        try {
-                            if (this.openai) {
-                                const openai = new OpenAI({
-                                    apiKey: this.openai.$auth.api_key,
-                                });
-                                const response = await openai.models.list();
-
-                                const initialResults = response.data.filter(model => model.id.includes("gpt"))
-                                    .sort((a, b) => a.id.localeCompare(b.id));
-
-                                const preferredModels = ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo", "gpt-4-turbo"];
-                                const preferredItems = [];
-                                
-                                for (const model of preferredModels) {
-                                    const index = initialResults.findIndex(result => result.id === model);
-                                    if (index !== -1) {
-                                        preferredItems.push(initialResults.splice(index, 1)[0]);
-                                    }
-                                }
-
-                                openaiModels = [...preferredItems, ...initialResults];
-                            }
-                        } catch (err) {
-                            console.error(`Błąd OpenAI: ${err} – Sprawdź swój klucz API.`);
-                        }
-                        
-                        if (openaiModels.length > 0) {
-                            props.model_chat = {
-                                type: "string",
-                                label: "Model ChatGPT",
-                                description: `Wybierz model. Domyślnie **gpt-3.5-turbo**.`,
-                                default: "gpt-3.5-turbo",
-                                options: openaiModels.map(model => ({
-                                    label: model.id,
-                                    value: model.id,
-                                })),
-                                optional: true,
-                            };
-                        }
-                    } else if (this.usluga_ai === "Anthropic") {
-                        props.anthropic = {
-                            type: "app",
-                            app: "anthropic",
-                            description: "Musisz mieć ustawioną metodę płatności w Anthropic.",
-                        };
-                        
-                        props.model_anthropic = {
-                            type: "string",
-                            label: "Model Anthropic",
-                            description: "Wybierz model Anthropic. Domyślnie claude-3-5-haiku-20241022.",
-                            default: "claude-3-5-haiku-20241022",
-                            options: [
-                                "claude-3-5-haiku-20241022",
-                                "claude-3-5-sonnet-20241022",
-                                "claude-3-7-sonnet-20250219",
-                                "claude-3-sonnet-20240229",
-                                "claude-3-opus-20240229",
-                                "claude-3-haiku-20240307"
-                            ],
-                        };
-                    }
-                    
-                    // Własne polecenia AI i prompt Whisper
-                    props.wlasne_polecenia_ai = {
-                        type: "string",
-                        label: "Własne polecenia dla AI",
-                        description: "Wprowadź własne polecenie dla modelu AI, np. 'Podaj 3 pomysły na...'. Wyniki zostaną dodane jako osobna sekcja.",
-                        optional: true,
-                    };
-                    
-                    props.prompt_whisper = {
-                        type: "string",
-                        label: "Prompt Whisper (opcjonalnie)",
-                        description: `Możesz wpisać prompt, który pomoże modelowi transkrypcji. Domyślnie prompt to "Witaj, witaj na moim wykładzie.", co poprawia interpunkcję.`,
-                        optional: true,
-                    };
-                    
-                    // Co ma znaleźć się na stronie
-                    props.opcje_meta = {
-                        type: "string[]",
-                        label: "Co ma znaleźć się na stronie",
-                        description: `Wybierz elementy, które mają zostać dodane do strony Notion.`,
+                        label: "Wartość tytułu",
+                        description: 'Wybierz wartość dla tytułu notatki.',
                         options: [
-                            "Górny dymek",
-                            "Spis treści",
-                            "Meta",
+                            "Tytuł AI",
+                            "Nazwa pliku",
+                            'Oba ("Nazwa pliku – Tytuł AI")',
                         ],
-                        default: ["Górny dymek", "Spis treści", "Meta"],
-                    };
-                    
-                    // Właściwości Notion
-                    props.tytulNotatki = {
-                        type: "string",
-                        label: "Tytuł notatki (wymagane)",
-                        description: `Wybierz właściwość tytułu dla notatek. Domyślnie nazywa się **Name**.`,
-                        options: titleProps.map(prop => ({ label: prop, value: prop })),
-                        optional: false,
-                        reloadProps: true,
-                    };
-                    
-                    if (this.tytulNotatki) {
-                        props.wartoscTytulu = {
-                            type: "string",
-                            label: "Wartość tytułu",
-                            description: 'Wybierz wartość dla tytułu notatki.',
-                            options: [
-                                "Tytuł AI",
-                                "Nazwa pliku",
-                                'Oba ("Nazwa pliku – Tytuł AI")',
-                            ],
-                            default: "Tytuł AI",
-                            optional: true,
-                        };
-                    }
-                    
-                    props.ikonaNotatki = {
-                        type: "string",
-                        label: "Ikona strony",
-                        description: "Wybierz emoji jako ikonę strony notatki.",
-                        options: EMOJI,
+                        default: "Tytuł AI",
                         optional: true,
-                        default: "🎙️",
                     };
-                    
-                    props.wlasciwoscTagu = {
+                }
+                
+                props.ikonaNotatki = {
+                    type: "string",
+                    label: "Ikona strony",
+                    description: "Wybierz emoji jako ikonę strony notatki.",
+                    options: EMOJI,
+                    optional: true,
+                    default: "🎙️",
+                };
+                
+                props.wlasciwoscTagu = {
+                    type: "string",
+                    label: "Tag notatki",
+                    description: 'Wybierz właściwość typu Select do tagowania notatki.',
+                    options: selectProps.map(prop => ({ label: prop, value: prop })),
+                    optional: true,
+                    reloadProps: true,
+                };
+                
+                if (this.wlasciwoscTagu) {
+                    props.wartoscTagu = {
                         type: "string",
-                        label: "Tag notatki",
-                        description: 'Wybierz właściwość typu Select do tagowania notatki.',
-                        options: selectProps.map(prop => ({ label: prop, value: prop })),
+                        label: "Wartość tagu",
+                        description: "Wybierz wartość dla tagu notatki.",
+                        options: properties[this.wlasciwoscTagu].select.options.map(option => ({
+                            label: option.name,
+                            value: option.name,
+                        })),
+                        default: "🎙️ Nagranie",
                         optional: true,
                         reloadProps: true,
                     };
-                    
-                    if (this.wlasciwoscTagu) {
-                        props.wartoscTagu = {
-                            type: "string",
-                            label: "Wartość tagu",
-                            description: "Wybierz wartość dla tagu notatki.",
-                            options: properties[this.wlasciwoscTagu].select.options.map(option => ({
-                                label: option.name,
-                                value: option.name,
-                            })),
-                            default: "🎙️ Nagranie",
-                            optional: true,
-                            reloadProps: true,
-                        };
-                    }
-                    
-                    // Dynamiczne opcje podsumowania w zależności od tagu
-                    const allSummaryOptions = [
-                        "Podsumowanie",
-                        "Główne punkty",
-                        "Elementy do wykonania",
+                }
+                
+                // Dynamiczne opcje podsumowania w zależności od tagu
+                const allSummaryOptions = [
+                    "Podsumowanie",
+                    "Główne punkty",
+                    "Elementy do wykonania",
+                    "Pytania uzupełniające",
+                    "Historie",
+                    "Odniesienia",
+                    "Argumenty",
+                    "Powiązane tematy",
+                    "Rozdziały",
+                    "Ogólny opis dnia",
+                    "Kluczowe wydarzenia",
+                    "Osiągnięcia",
+                    "Wyzwania",
+                    "Wnioski",
+                    "Plan działania",
+                    "Rozwój osobisty",
+                    "Refleksja",
+                    "Ocena dnia (1-100)",
+                    "AI rekomendacje",
+                    "Źródła do przejrzenia"
+                ];
+                
+                // Dodanie własnego polecenia do opcji podsumowania, jeśli istnieje
+                if (this.wlasne_polecenia_ai) {
+                    allSummaryOptions.push(this.wlasne_polecenia_ai);
+                }
+                
+                let defaultSummaryOptions;
+                
+                if (this.wartoscTagu && this.wartoscTagu === "🎙️ Nagranie") {
+                    defaultSummaryOptions = [
+                        "Podsumowanie", 
+                        "Główne punkty", 
+                        "Elementy do wykonania", 
                         "Pytania uzupełniające",
                         "Historie",
                         "Odniesienia",
-                        "Argumenty",
                         "Powiązane tematy",
-                        "Rozdziały",
+                        "Rozdziały"
+                    ];
+                } else if (this.wartoscTagu && this.wartoscTagu === "📓 Dziennik") {
+                    defaultSummaryOptions = [
                         "Ogólny opis dnia",
                         "Kluczowe wydarzenia",
                         "Osiągnięcia",
@@ -314,246 +434,217 @@ async additionalProps() {
                         "Rozwój osobisty",
                         "Refleksja",
                         "Ocena dnia (1-100)",
-                        "AI rekomendacje",
-                        "Źródła do przejrzenia"
+                        "AI rekomendacje"
                     ];
-                    
-                    // Dodanie własnego polecenia do opcji podsumowania, jeśli istnieje
-                    if (this.wlasne_polecenia_ai) {
-                        allSummaryOptions.push(this.wlasne_polecenia_ai);
-                    }
-                    
-                    let defaultSummaryOptions;
-                    
-                    if (this.wartoscTagu && this.wartoscTagu === "🎙️ Nagranie") {
-                        defaultSummaryOptions = [
-                            "Podsumowanie", 
-                            "Główne punkty", 
-                            "Elementy do wykonania", 
-                            "Pytania uzupełniające",
-                            "Historie",
-                            "Odniesienia",
-                            "Powiązane tematy",
-                            "Rozdziały"
-                        ];
-                    } else if (this.wartoscTagu && this.wartoscTagu === "📓 Dziennik") {
-                        defaultSummaryOptions = [
-                            "Ogólny opis dnia",
-                            "Kluczowe wydarzenia",
-                            "Osiągnięcia",
-                            "Wyzwania",
-                            "Wnioski",
-                            "Plan działania",
-                            "Rozwój osobisty",
-                            "Refleksja",
-                            "Ocena dnia (1-100)",
-                            "AI rekomendacje"
-                        ];
-                    } else {
-                        // Dla innych tagów lub gdy nie wybrano tagu
-                        defaultSummaryOptions = ["Podsumowanie"];
-                    }
-                    
-                    props.opcje_podsumowania = {
-                        type: "string[]",
-                        label: "Opcje podsumowania",
-                        description: `Wybierz opcje do uwzględnienia w Twoim podsumowaniu. Musisz wybrać co najmniej jedną opcję.`,
-                        options: allSummaryOptions,
-                        default: defaultSummaryOptions,
-                        optional: false,
-                    };
-                    
-                    // Pozostałe właściwości Notion
-                    props.wlasciwoscCzasu = {
-                        type: "string",
-                        label: "Czas trwania",
-                        description: "Wybierz właściwość czasu trwania. Musi być typu Number.",
-                        options: numberProps.map(prop => ({ label: prop, value: prop })),
-                        optional: true,
-                    };
-                    
-                    props.wlasciwoscKosztu = {
-                        type: "string",
-                        label: "Koszt notatki",
-                        description: "Wybierz właściwość kosztu. Musi być typu Number.",
-                        options: numberProps.map(prop => ({ label: prop, value: prop })),
-                        optional: true,
-                    };
-                    
-                    props.wlasciwoscDaty = {
-                        type: "string",
-                        label: "Data notatki",
-                        description: "Wybierz właściwość daty dla notatki.",
-                        options: dateProps.map(prop => ({ label: prop, value: prop })),
-                        optional: true,
-                    };
-                    
-                    props.wlasciwoscNazwyPliku = {
-                        type: "string",
-                        label: "Nazwa pliku",
-                        description: "Wybierz właściwość tekstu dla nazwy pliku.",
-                        options: textProps.map(prop => ({ label: prop, value: prop })),
-                        optional: true,
-                    };
-                    
-                    props.wlasciwoscLinkuPliku = {
-                        type: "string",
-                        label: "Link do pliku",
-                        description: "Wybierz właściwość URL dla linku do pliku.",
-                        options: urlProps.map(prop => ({ label: prop, value: prop })),
-                        optional: true,
-                    };
-                    
-                    // Opcje zaawansowane
-                    props.opcje_zaawansowane = {
+                } else {
+                    // Dla innych tagów lub gdy nie wybrano tagu
+                    defaultSummaryOptions = ["Podsumowanie"];
+                }
+                
+                props.opcje_podsumowania = {
+                    type: "string[]",
+                    label: "Opcje podsumowania",
+                    description: `Wybierz opcje do uwzględnienia w Twoim podsumowaniu. Musisz wybrać co najmniej jedną opcję.`,
+                    options: allSummaryOptions,
+                    default: defaultSummaryOptions,
+                    optional: false,
+                };
+                
+                // Pozostałe właściwości Notion
+                props.wlasciwoscCzasu = {
+                    type: "string",
+                    label: "Czas trwania",
+                    description: "Wybierz właściwość czasu trwania. Musi być typu Number.",
+                    options: numberProps.map(prop => ({ label: prop, value: prop })),
+                    optional: true,
+                };
+                
+                props.wlasciwoscKosztu = {
+                    type: "string",
+                    label: "Koszt notatki",
+                    description: "Wybierz właściwość kosztu. Musi być typu Number.",
+                    options: numberProps.map(prop => ({ label: prop, value: prop })),
+                    optional: true,
+                };
+                
+                props.wlasciwoscDaty = {
+                    type: "string",
+                    label: "Data notatki",
+                    description: "Wybierz właściwość daty dla notatki.",
+                    options: dateProps.map(prop => ({ label: prop, value: prop })),
+                    optional: true,
+                };
+                
+                props.wlasciwoscLinkuPliku = {
+                    type: "string",
+                    label: "Link do pliku",
+                    description: "Wybierz właściwość URL dla linku do pliku.",
+                    options: urlProps.map(prop => ({ label: prop, value: prop })),
+                    optional: true,
+                };
+                
+                // Opcje zaawansowane
+                props.opcje_zaawansowane = {
+                    type: "boolean",
+                    label: "Opcje zaawansowane",
+                    description: `Ustaw na **True**, aby włączyć opcje zaawansowane.`,
+                    default: false,
+                    optional: true,
+                    reloadProps: true,
+                };
+                
+                if (this.opcje_zaawansowane === true) {
+                    // Dodawanie pliku do notatki
+                    props.dodac_plik = {
                         type: "boolean",
-                        label: "Opcje zaawansowane",
-                        description: `Ustaw na **True**, aby włączyć opcje zaawansowane.`,
+                        label: "Dodać plik do notatki",
+                        description: "Ustaw na **True**, aby dodać plik audio do właściwości plików w Notion.",
                         default: false,
-                        optional: true,
                         reloadProps: true,
                     };
                     
-                    if (this.opcje_zaawansowane === true) {
-                        // Dodawanie pliku do notatki
-                        props.dodac_plik = {
-                            type: "boolean",
-                            label: "Dodać plik do notatki",
-                            description: "Ustaw na **True**, aby dodać plik audio do właściwości plików w Notion.",
-                            default: false,
-                            reloadProps: true,
-                        };
-                        
-                        if (this.dodac_plik === true) {
-                            props.wlasciwoscPliku = {
-                                type: "string",
-                                label: "Właściwość pliku",
-                                description: "Wybierz właściwość typu Files dla pliku audio.",
-                                options: filesProps.map(prop => ({ label: prop, value: prop })),
-                                optional: true,
-                            };
-                            
-                            props.plan_notion = {
-                                type: "string",
-                                label: "Plan Notion",
-                                description: "Wybierz swój plan Notion. Wpłynie to na maksymalny rozmiar pliku, który można przesłać.",
-                                options: [
-                                    "Darmowy (max 4.8MB)",
-                                    "Płatny (max 1GB)"
-                                ],
-                                default: "Darmowy (max 4.8MB)",
-                            };
-                        }
-                        
-                        // Opcje języka
-                        props.jezyk_transkrypcji = {
+                    if (this.dodac_plik === true) {
+                        props.wlasciwoscPliku = {
                             type: "string",
-                            label: "Język transkrypcji (opcjonalnie)",
-                            description: `Wybierz preferowany język wyjściowy. Whisper spróbuje przetłumaczyć audio na ten język.
-                            
-                            Jeśli nie znasz języka pliku, możesz zostawić to pole puste, a Whisper spróbuje wykryć język i zapisać transkrypcję w tym samym języku.
-                            
-                            Ta opcja obsługuje tylko [języki obsługiwane przez model Whisper](https://help.openai.com/en/articles/7031512-whisper-api-faq).`,
-                            optional: true,
-                            options: lang.LANGUAGES.map((lang) => ({
-                                label: lang.label,
-                                value: lang.value,
-                            })),
-                            reloadProps: true,
-                        };
-                        
-                        props.jezyk_podsumowania = {
-                            type: "string",
-                            label: "Język podsumowania",
-                            description: `Określ język dla treści podsumowania. Spowoduje to, że model AI spróbuje podsumować transkrypcję w wybranym języku.
-                            
-                            Jeśli zostawisz to pole puste, model AI będzie poinstruowany, aby użyć tego samego języka co transkrypcja.`,
-                            optional: true,
-                            options: lang.LANGUAGES.map((lang) => ({
-                                label: lang.label,
-                                value: lang.value,
-                            })),
-                            reloadProps: true,
-                        };
-                        
-                        props.jezyk_tytulu = {
-                            type: "string",
-                            label: "Język tytułu",
-                            description: "Wybierz język dla tytułu notatki. Jeśli nie wybierzesz, tytuł będzie w tym samym języku co transkrypcja.",
-                            options: lang.LANGUAGES.map((lang) => ({
-                                label: lang.label,
-                                value: lang.value,
-                            })),
+                            label: "Właściwość pliku",
+                            description: "Wybierz właściwość typu Files dla pliku audio.",
+                            options: filesProps.map(prop => ({ label: prop, value: prop })),
                             optional: true,
                         };
                         
-                        if (this.jezyk_podsumowania) {
-                            props.przetlumacz_transkrypcje = {
-                                type: "string",
-                                label: "Dodaj tłumaczenie (transkrypcja)",
-                                description: `Wybierz opcję poniżej, jeśli chcesz, aby model AI przetłumaczył transkrypcję na wybrany język podsumowania. Nastąpi to tylko wtedy, gdy język transkrypcji różni się od ustawienia języka podsumowania.
-                                
-                                **Uwaga:** Zwiększy to koszt wykonania o ok. 0,003 USD za 1000 słów. Ta opcja zawsze używa domyślnego modelu gpt-3.5-turbo.`,
-                                optional: true,
-                                options: [
-                                    "Przetłumacz i zachowaj oryginał",
-                                    "Przetłumacz tylko",
-                                    "Nie tłumacz"
-                                ],
-                            };
-                        }
-                        
-                        // Parametry AI
-                        props.gestosc_podsumowania = {
-                            type: "integer",
-                            label: "Gęstość podsumowania",
-                            description: `Ustawia maksymalną liczbę tokenów dla każdego fragmentu transkrypcji.`,
-                            min: 500,
-                            max: this.usluga_ai === "Anthropic" ? 50000 : 5000,
-                            default: 2750,
-                            optional: true,
-                        };
-                        
-                        props.szczegolowoc = {
+                        props.plan_notion = {
                             type: "string",
-                            label: "Szczegółowość",
-                            description: "Poziom szczegółowości podsumowania i list.",
-                            options: ["Niska", "Średnia", "Wysoka"],
-                            default: "Średnia",
+                            label: "Plan Notion",
+                            description: "Wybierz swój plan Notion. Wpłynie to na maksymalny rozmiar pliku, który można przesłać.",
+                            options: [
+                                "Darmowy (max 4.8MB)",
+                                "Płatny (max 1GB)"
+                            ],
+                            default: "Darmowy (max 4.8MB)",
                         };
                         
-                        props.temperatura = {
-                            type: "integer",
-                            label: "Temperatura",
-                            description: "Temperatura dla żądań AI. Wyższa = bardziej kreatywne wyniki.",
-                            min: 0,
-                            max: 10,
-                            default: 2,
-                        };
-                        
-                        props.rozmiar_fragmentu = {
-                            type: "integer",
-                            label: "Rozmiar fragmentu (MB)",
-                            description: "Rozmiar fragmentu audio w megabajtach.",
-                            min: 10,
-                            max: 50,
-                            default: 24,
-                        };
-                        
-                        props.wylacz_moderacje = {
-                            type: "boolean",
-                            label: "Wyłącz moderację",
-                            description: "Wyłącza sprawdzanie moderacji.",
-                            default: false,
-                        };
-                        
-                        props.przerwij_bez_czasu = {
-                            type: "boolean",
-                            label: "Przerwij bez czasu",
-                            description: "Przerywa, jeśli czas trwania nie może być określony.",
-                            default: false,
+                        // Nazwa pliku tylko jeśli dodajemy plik
+                        props.wlasciwoscNazwyPliku = {
+                            type: "string",
+                            label: "Nazwa pliku",
+                            description: "Wybierz właściwość tekstu dla nazwy pliku.",
+                            options: textProps.map(prop => ({ label: prop, value: prop })),
+                            optional: true,
                         };
                     }
+                    
+                    // Opcje języka
+                    props.jezyk_transkrypcji = {
+                        type: "string",
+                        label: "Język transkrypcji (opcjonalnie)",
+                        description: `Wybierz preferowany język wyjściowy. Whisper spróbuje przetłumaczyć audio na ten język.
+                        
+                        Jeśli nie znasz języka pliku, możesz zostawić to pole puste, a Whisper spróbuje wykryć język i zapisać transkrypcję w tym samym języku.
+                        
+                        Ta opcja obsługuje tylko języki obsługiwane przez model Whisper.`,
+                        optional: true,
+                        options: lang.LANGUAGES.map((lang) => ({
+                            label: lang.label,
+                            value: lang.value,
+                        })),
+                        reloadProps: true,
+                    };
+                    
+                    props.jezyk_podsumowania = {
+                        type: "string",
+                        label: "Język podsumowania",
+                        description: `Określ język dla treści podsumowania. Model AI spróbuje podsumować transkrypcję w wybranym języku.
+                        
+                        Jeśli zostawisz to pole puste, model AI użyje tego samego języka co transkrypcja.`,
+                        optional: true,
+                        options: lang.LANGUAGES.map((lang) => ({
+                            label: lang.label,
+                            value: lang.value,
+                        })),
+                        reloadProps: true,
+                    };
+                    
+                    props.jezyk_tytulu = {
+                        type: "string",
+                        label: "Język tytułu",
+                        description: "Wybierz język dla tytułu notatki. Jeśli nie wybierzesz, tytuł będzie w tym samym języku co transkrypcja.",
+                        options: lang.LANGUAGES.map((lang) => ({
+                            label: lang.label,
+                            value: lang.value,
+                        })),
+                        optional: true,
+                    };
+                    
+                    if (this.jezyk_podsumowania) {
+                        props.przetlumacz_transkrypcje = {
+                            type: "string",
+                            label: "Dodaj tłumaczenie (transkrypcja)",
+                            description: `Wybierz opcję, jeśli chcesz, aby model AI przetłumaczył transkrypcję na wybrany język podsumowania. 
+                            
+                            Przykłady:
+                            - Transkrypcja po angielsku, język podsumowania polski → transkrypcja będzie przetłumaczona na polski
+                            - Transkrypcja po polsku, język podsumowania angielski → transkrypcja będzie przetłumaczona na angielski
+                            
+                            Tłumaczenie nastąpi tylko wtedy, gdy wykryty język transkrypcji różni się od wybranego języka podsumowania.`,
+                            optional: true,
+                            options: [
+                                "Przetłumacz i zachowaj oryginał",
+                                "Przetłumacz tylko",
+                                "Nie tłumacz"
+                            ],
+                        };
+                    }
+                    
+                    // Parametry AI
+                    props.gestosc_podsumowania = {
+                        type: "integer",
+                        label: "Gęstość podsumowania",
+                        description: `Ustawia maksymalną liczbę tokenów dla każdego fragmentu transkrypcji.`,
+                        min: 500,
+                        max: this.usluga_ai === "Anthropic" ? 50000 : 5000,
+                        default: 2750,
+                        optional: true,
+                    };
+                    
+                    props.szczegolowoc = {
+                        type: "string",
+                        label: "Szczegółowość",
+                        description: "Poziom szczegółowości podsumowania i list.",
+                        options: ["Niska", "Średnia", "Wysoka"],
+                        default: "Średnia",
+                    };
+                    
+                    props.temperatura = {
+                        type: "integer",
+                        label: "Temperatura",
+                        description: "Temperatura dla żądań AI. Wyższa = bardziej kreatywne wyniki.",
+                        min: 0,
+                        max: 10,
+                        default: 2,
+                    };
+                    
+                    props.rozmiar_fragmentu = {
+                        type: "integer",
+                        label: "Rozmiar fragmentu (MB)",
+                        description: "Rozmiar fragmentu audio w megabajtach.",
+                        min: 10,
+                        max: 50,
+                        default: 24,
+                    };
+                    
+                    props.wylacz_moderacje = {
+                        type: "boolean",
+                        label: "Wyłącz moderację",
+                        description: "Wyłącza sprawdzanie moderacji.",
+                        default: false,
+                    };
+                    
+                    props.przerwij_bez_czasu = {
+                        type: "boolean",
+                        label: "Przerwij bez czasu",
+                        description: "Przerywa, jeśli czas trwania nie może być określony.",
+                        default: false,
+                    };
                 }
             } catch (error) {
                 console.error("Błąd podczas pobierania właściwości bazy danych Notion:", error);
