@@ -142,7 +142,7 @@ export default {
     prompt_whisper: {
       type: "string",
       label: "Prompt Whisper (opcjonalnie)",
-      description: `Możesz wpisać prompt, który pomoże modelowi transkrypcji. Domyślnie prompt to "Witaj, witaj na moim wykładzie.", co poprawia interpunkcję.`
+      description: `Możesz wpisać prompt, który pomoże modelowi transkrypcji. Domyślnie prompt to "Witaj, witaj na moim wykładzie.", co poprawia interpunkcję.`,
       optional: true,
     },
     usluga_ai: {
@@ -153,359 +153,423 @@ export default {
       default: "OpenAI",
       reloadProps: true,
     },
+    wlasne_polecenia_ai: {
+      type: "string",
+      label: "Własne polecenia dla AI (opcjonalnie)",
+      description: "Wprowadź własne polecenie dla modelu AI, np. 'Podaj 3 pomysły na...'. Wyniki zostaną dodane jako osobna sekcja.",
+      optional: true,
+    },
     // Pola specyficzne dla OpenAI i Anthropic będą teraz dynamicznie dodawane w additionalProps
   },
 
   async additionalProps() {
     const props = {};
 
-        // Konta i modele AI w zależności od wybranej usługi
-        if (this.usluga_ai === "OpenAI") {
-            props.openai = {
-                type: "app",
-                app: "openai",
-                label: "Konto OpenAI",
-                description: `**Ważne:** Jeśli korzystasz z darmowego kredytu próbnego OpenAI, Twój klucz API może mieć ograniczenia i nie obsłuży dłuższych plików.`,
-            };
-            
-            // Statyczna lista modelów OpenAI
-            props.model_chat = {
-                type: "string",
-                label: "Model ChatGPT",
-                description: `Wybierz model. Domyślnie **gpt-3.5-turbo**.`,
-                default: "gpt-3.5-turbo",
-                options: [
-                    { label: "GPT-3.5 Turbo", value: "gpt-3.5-turbo" },
-                    { label: "GPT-4o", value: "gpt-4o" },
-                    { label: "GPT-4o Mini", value: "gpt-4o-mini" },
-                    { label: "GPT-4 Turbo", value: "gpt-4-turbo-preview" }
-                ],
-            };
-        } else if (this.usluga_ai === "Anthropic") {
-            props.anthropic = {
-                type: "app",
-                app: "anthropic",
-                label: "Konto Anthropic",
-                description: "Musisz mieć ustawioną metodę płatności w Anthropic.",
-            };
-            
-            props.model_anthropic = {
-                type: "string",
-                label: "Model Anthropic",
-                description: "Wybierz model Anthropic. Domyślnie claude-3-5-haiku-20241022.",
-                default: "claude-3-5-haiku-20241022",
-                options: [
-                    "claude-3-5-haiku-20241022",
-                    "claude-3-5-sonnet-20241022",
-                    "claude-3-7-sonnet-20250219",
-                    "claude-3-sonnet-20240229",
-                    "claude-3-opus-20240229",
-                    "claude-3-haiku-20240307"
-                ],
-            };
-        }
+    // Opisy opcji podsumowania dla podpowiedzi użytkownika
+    const optionsDescriptions = {
+      "Podsumowanie": "Zwięzłe streszczenie całej zawartości transkrypcji (ok. 10-15% długości).",
+      "Główne punkty": "Lista najważniejszych tematów i kluczowych informacji z nagrania.",
+      "Elementy do wykonania": "Lista zadań i czynności do wykonania wspomnianych w nagraniu.",
+      "Pytania uzupełniające": "Lista pytań, które pojawiły się lub mogłyby się pojawić w kontekście tematów.",
+      "Historie": "Wyodrębnione opowieści, anegdoty i przykłady z nagrania.",
+      "Odniesienia": "Lista odwołań do zewnętrznych źródeł, osób, dzieł itp.",
+      "Argumenty": "Lista potencjalnych kontrargumentów do głównych tez z nagrania.",
+      "Powiązane tematy": "Lista tematów powiązanych, które mogą być interesujące do dalszej eksploracji.",
+      "Rozdziały": "Podział nagrania na logiczne sekcje z czasem rozpoczęcia/zakończenia.",
+      "Ogólny opis dnia": "Krótkie podsumowanie nastroju i charakteru opisanego dnia.",
+      "Kluczowe wydarzenia": "Lista najważniejszych zdarzeń wspomniana w dzienniku.",
+      "Osiągnięcia": "Lista sukcesów i ukończonych zadań wspomnianych w dzienniku.",
+      "Wyzwania": "Lista trudności i problemów napotkanych danego dnia.",
+      "Wnioski": "Kluczowe obserwacje i przemyślenia wynikające z zapisków.",
+      "Plan działania": "Konkretne kroki do podjęcia w przyszłości.",
+      "Rozwój osobisty": "Opis momentów rozwoju osobistego lub pozytywnego wpływu dnia.",
+      "Refleksja": "Krótkie podsumowanie wpływu dnia na życie i cele.",
+      "Ocena dnia (1-100)": "Liczba od 1 do 100 określająca ogólną ocenę dnia.",
+      "AI rekomendacje": "5 konkretnych, praktycznych rekomendacji na podstawie treści nagrania.",
+      "Źródła do przejrzenia": "Sugerowane książki, artykuły, kursy lub narzędzia związane z tematem."
+      
+      // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 1
+      // Jeśli chcesz dodać nową opcję podsumowania, dodaj jej opis tutaj:
+      // "Nazwa nowej opcji": "Opis tego, co ta opcja robi.",
+    };
+
+    // Konta i modele AI w zależności od wybranej usługi
+    if (this.usluga_ai === "OpenAI") {
+      props.openai = {
+        type: "app",
+        app: "openai",
+        label: "Konto OpenAI",
+        description: `**Ważne:** Jeśli korzystasz z darmowego kredytu próbnego OpenAI, Twój klucz API może mieć ograniczenia i nie obsłuży dłuższych plików.`,
+      };
         
-        // Własne polecenia AI (zawsze widoczne)
-        props.wlasne_polecenia_ai = {
+      // Statyczna lista modelów OpenAI
+      props.model_chat = {
+        type: "string",
+        label: "Model ChatGPT",
+        description: `Wybierz model. Domyślnie **gpt-3.5-turbo**.`,
+        default: "gpt-3.5-turbo",
+        options: [
+          { label: "GPT-3.5 Turbo", value: "gpt-3.5-turbo" },
+          { label: "GPT-4o", value: "gpt-4o" },
+          { label: "GPT-4o Mini", value: "gpt-4o-mini" },
+          { label: "GPT-4 Turbo", value: "gpt-4-turbo-preview" }
+        ],
+      };
+    } else if (this.usluga_ai === "Anthropic") {
+      props.anthropic = {
+        type: "app",
+        app: "anthropic",
+        label: "Konto Anthropic",
+        description: "Musisz mieć ustawioną metodę płatności w Anthropic.",
+      };
+        
+      props.model_anthropic = {
+        type: "string",
+        label: "Model Anthropic",
+        description: "Wybierz model Anthropic. Domyślnie claude-3-5-haiku-20241022.",
+        default: "claude-3-5-haiku-20241022",
+        options: [
+          "claude-3-5-haiku-20241022",
+          "claude-3-5-sonnet-20241022",
+          "claude-3-7-sonnet-20250219",
+          "claude-3-sonnet-20240229",
+          "claude-3-opus-20240229",
+          "claude-3-haiku-20240307"
+        ],
+      };
+    }
+        
+    // Co ma znaleźć się na stronie
+    props.opcje_meta = {
+      type: "string[]",
+      label: "Elementy strony",
+      description: `Wybierz elementy, które mają zostać dodane do strony Notion.`,
+      options: [
+        "Callout informacyjny (górny dymek)",
+        "Spis treści",
+        "Metadane (koszty, czas)"
+      ],
+      default: ["Callout informacyjny (górny dymek)", "Spis treści", "Metadane (koszty, czas)"],
+    };
+
+    // Jeśli mamy bazę danych Notion
+    if (this.notion && this.databaseID) {
+      try {
+        const notion = new Client({
+          auth: this.notion.$auth.oauth_access_token,
+        });
+                
+        const database = await notion.databases.retrieve({
+          database_id: this.databaseID,
+        });
+                
+        const properties = database.properties;
+                
+        // Pobierz typy właściwości
+        const titleProps = Object.keys(properties).filter(k => properties[k].type === "title");
+        const numberProps = Object.keys(properties).filter(k => properties[k].type === "number");
+        const selectProps = Object.keys(properties).filter(k => properties[k].type === "select");
+        const dateProps = Object.keys(properties).filter(k => properties[k].type === "date");
+        const textProps = Object.keys(properties).filter(k => properties[k].type === "rich_text");
+        const urlProps = Object.keys(properties).filter(k => properties[k].type === "url");
+        const filesProps = Object.keys(properties).filter(k => properties[k].type === "files");
+                
+        // Właściwości Notion
+        props.tytulNotatki = {
+          type: "string",
+          label: "Tytuł notatki (wymagane)",
+          description: `Wybierz właściwość tytułu dla notatek. Domyślnie nazywa się **Name**.`,
+          options: titleProps.map(prop => ({ label: prop, value: prop })),
+          optional: false,
+          reloadProps: true,
+        };
+                
+        if (this.tytulNotatki) {
+          props.wartoscTytulu = {
             type: "string",
-            label: "Własne polecenia dla AI (opcjonalnie)",
-            description: "Wprowadź własne polecenie dla modelu AI, np. 'Podaj 3 pomysły na...'. Wyniki zostaną dodane jako osobna sekcja."
-        };
-        
-        // Co ma znaleźć się na stronie
-        props.opcje_meta = {
-            type: "string[]",
-            label: "Co ma znaleźć się na stronie",
-            description: `Wybierz elementy, które mają zostać dodane do strony Notion.`,
+            label: "Wartość tytułu",
+            description: 'Wybierz wartość dla tytułu notatki.',
             options: [
-                "Górny dymek",
-                "Spis treści",
-                "Dane",
+              "Tytuł AI",
+              "Nazwa pliku",
+              'Oba ("Nazwa pliku – Tytuł AI")',
             ],
-            default: ["Górny dymek", "Spis treści", "Dane"],
+            default: "Tytuł AI",
+            optional: true,
+          };
+        }
+                
+        props.ikonaNotatki = {
+          type: "string",
+          label: "Ikona strony",
+          description: "Wybierz emoji jako ikonę strony notatki.",
+          options: EMOJI,
+          optional: true,
+          default: "🎙️",
         };
+                
+        props.wlasciwoscTagu = {
+          type: "string",
+          label: "Tag notatki",
+          description: 'Wybierz właściwość typu Select do tagowania notatki.',
+          options: selectProps.map(prop => ({ label: prop, value: prop })),
+          optional: true,
+          reloadProps: true,
+        };
+                
+        if (this.wlasciwoscTagu) {
+          // Pobierz istniejące opcje z bazy danych
+          const existingTagOptions = properties[this.wlasciwoscTagu].select.options.map(option => ({
+            label: option.name,
+            value: option.name,
+          }));
+            
+          // Domyślne opcje, które zawsze powinny być dostępne
+          const defaultTagOptions = [
+            { label: "🎙️ Nagranie", value: "🎙️ Nagranie" },
+            { label: "📓 Dziennik", value: "📓 Dziennik" }
+          ];
+            
+          // Połącz istniejące opcje z domyślnymi, usuwając duplikaty
+          const allTagOptions = [...existingTagOptions];
+            
+          // Dodaj domyślne opcje, jeśli nie istnieją w bazie
+          for (const defaultOption of defaultTagOptions) {
+            if (!allTagOptions.some(option => option.value === defaultOption.value)) {
+              allTagOptions.push(defaultOption);
+            }
+          }
+                    
+          props.wartoscTagu = {
+            type: "string",
+            label: "Wartość tagu",
+            description: "Wybierz wartość dla tagu notatki. Domyślnie dostępne są opcje \"🎙️ Nagranie\" i \"📓 Dziennik\", które automatycznie ustawią odpowiednie opcje podsumowania.",
+            options: allTagOptions,
+            default: "🎙️ Nagranie",
+            optional: true,
+            reloadProps: true,
+          };
+        }
+                
+        // Przygotowanie opcji podsumowania
+        const allSummaryOptions = [
+          "Podsumowanie",
+          "Główne punkty",
+          "Elementy do wykonania",
+          "Pytania uzupełniające",
+          "Historie",
+          "Odniesienia",
+          "Argumenty",
+          "Powiązane tematy",
+          "Rozdziały",
+          "Ogólny opis dnia",
+          "Kluczowe wydarzenia",
+          "Osiągnięcia",
+          "Wyzwania",
+          "Wnioski",
+          "Plan działania",
+          "Rozwój osobisty",
+          "Refleksja",
+          "Ocena dnia (1-100)",
+          "AI rekomendacje",
+          "Źródła do przejrzenia"
+          
+          // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 2
+          // Jeśli chcesz dodać nową opcję podsumowania, dodaj ją do tej tablicy:
+          // "Nazwa nowej opcji",
+        ];
 
-        // Jeśli mamy bazę danych Notion
-        if (this.notion && this.databaseID) {
-            try {
-                const notion = new Client({
-                    auth: this.notion.$auth.oauth_access_token,
-                });
-                
-                const database = await notion.databases.retrieve({
-                    database_id: this.databaseID,
-                });
-                
-                const properties = database.properties;
-                
-                // Pobierz typy właściwości
-                const titleProps = Object.keys(properties).filter(k => properties[k].type === "title");
-                const numberProps = Object.keys(properties).filter(k => properties[k].type === "number");
-                const selectProps = Object.keys(properties).filter(k => properties[k].type === "select");
-                const dateProps = Object.keys(properties).filter(k => properties[k].type === "date");
-                const textProps = Object.keys(properties).filter(k => properties[k].type === "rich_text");
-                const urlProps = Object.keys(properties).filter(k => properties[k].type === "url");
-                const filesProps = Object.keys(properties).filter(k => properties[k].type === "files");
-                
-                // Właściwości Notion
-                props.tytulNotatki = {
-                    type: "string",
-                    label: "Tytuł notatki (wymagane)",
-                    description: `Wybierz właściwość tytułu dla notatek. Domyślnie nazywa się **Name**.`,
-                    options: titleProps.map(prop => ({ label: prop, value: prop })),
-                    optional: false,
-                    reloadProps: true,
-                };
-                
-                if (this.tytulNotatki) {
-                    props.wartoscTytulu = {
-                        type: "string",
-                        label: "Wartość tytułu",
-                        description: 'Wybierz wartość dla tytułu notatki.',
-                        options: [
-                            "Tytuł AI",
-                            "Nazwa pliku",
-                            'Oba ("Nazwa pliku – Tytuł AI")',
-                        ],
-                        default: "Tytuł AI",
-                        optional: true,
-                    };
-                }
-                
-                props.ikonaNotatki = {
-                    type: "string",
-                    label: "Ikona strony",
-                    description: "Wybierz emoji jako ikonę strony notatki.",
-                    options: EMOJI,
-                    optional: true,
-                    default: "🎙️",
-                };
-                
-                props.wlasciwoscTagu = {
-                    type: "string",
-                    label: "Tag notatki",
-                    description: 'Wybierz właściwość typu Select do tagowania notatki.',
-                    options: selectProps.map(prop => ({ label: prop, value: prop })),
-                    optional: true,
-                    reloadProps: true,
-                };
-                
-                if (this.wlasciwoscTagu) {
-                    // Pobierz opcje tagów z bazy danych
-                    const tagOptions = properties[this.wlasciwoscTagu].select.options.map(option => ({
-                        label: option.name,
-                        value: option.name,
-                    }));
-                    
-                    props.wartoscTagu = {
-                        type: "string",
-                        label: "Wartość tagu",
-                        description: "Wybierz wartość dla tagu notatki.",
-                        options: tagOptions,
-                        default: "🎙️ Nagranie",
-                        optional: true,
-                        reloadProps: true,
-                    };
-                }
-                
-                // Dynamiczne opcje podsumowania w zależności od tagu
-                const allSummaryOptions = [
-                    "Podsumowanie",
-                    "Główne punkty",
-                    "Elementy do wykonania",
-                    "Pytania uzupełniające",
-                    "Historie",
-                    "Odniesienia",
-                    "Argumenty",
-                    "Powiązane tematy",
-                    "Rozdziały",
-                    "Ogólny opis dnia",
-                    "Kluczowe wydarzenia",
-                    "Osiągnięcia",
-                    "Wyzwania",
-                    "Wnioski",
-                    "Plan działania",
-                    "Rozwój osobisty",
-                    "Refleksja",
-                    "Ocena dnia (1-100)",
-                    "AI rekomendacje",
-                    "Źródła do przejrzenia"
-                ];
-                
-                // Dodanie własnego polecenia do opcji podsumowania, jeśli istnieje
-                if (this.wlasne_polecenia_ai) {
-                    allSummaryOptions.push(this.wlasne_polecenia_ai);
-                }
-                
-                let defaultSummaryOptions;
-                
-                if (this.wartoscTagu === "🎙️ Nagranie") {
-                    defaultSummaryOptions = [
-                        "Podsumowanie", 
-                        "Główne punkty", 
-                        "Elementy do wykonania", 
-                        "Pytania uzupełniające",
-                        "Historie",
-                        "Odniesienia",
-                        "Powiązane tematy",
-                        "Rozdziały"
-                    ];
-                } else if (this.wartoscTagu === "📓 Dziennik") {
-                    defaultSummaryOptions = [
-                        "Ogólny opis dnia",
-                        "Kluczowe wydarzenia",
-                        "Osiągnięcia",
-                        "Wyzwania",
-                        "Wnioski",
-                        "Plan działania",
-                        "Rozwój osobisty",
-                        "Refleksja",
-                        "Ocena dnia (1-100)",
-                        "AI rekomendacje"
-                    ];
-                } else {
-                    // Dla innych tagów lub gdy nie wybrano tagu
-                    defaultSummaryOptions = ["Podsumowanie"];
-                }
-                
-                props.opcje_podsumowania = {
-                    type: "string[]",
-                    label: "Opcje podsumowania",
-                    description: `Wybierz opcje do uwzględnienia w Twoim podsumowaniu. Musisz wybrać co najmniej jedną opcję.`,
-                    options: allSummaryOptions,
-                    default: defaultSummaryOptions,
-                    optional: false,
-                };
-                
-                // Pozostałe właściwości Notion
-                props.wlasciwoscCzasu = {
-                    type: "string",
-                    label: "Czas trwania",
-                    description: "Wybierz właściwość czasu trwania. Musi być typu Number.",
-                    options: numberProps.map(prop => ({ label: prop, value: prop })),
-                    optional: true,
-                };
-                
-                props.wlasciwoscKosztu = {
-                    type: "string",
-                    label: "Koszt notatki",
-                    description: "Wybierz właściwość kosztu. Musi być typu Number.",
-                    options: numberProps.map(prop => ({ label: prop, value: prop })),
-                    optional: true,
-                };
-                
-                props.wlasciwoscDaty = {
-                    type: "string",
-                    label: "Data notatki",
-                    description: "Wybierz właściwość daty dla notatki.",
-                    options: dateProps.map(prop => ({ label: prop, value: prop })),
-                    optional: true,
-                };
-                
-                props.wlasciwoscLinkuPliku = {
-                    type: "string",
-                    label: "Link do pliku",
-                    description: "Wybierz właściwość URL dla linku do pliku.",
-                    options: urlProps.map(prop => ({ label: prop, value: prop })),
-                    optional: true,
-                };
-                
-                // Opcje zaawansowane
-                props.opcje_zaawansowane = {
-                    type: "boolean",
-                    label: "Opcje zaawansowane",
-                    description: `Ustaw na **True**, aby włączyć opcje zaawansowane.`,
-                    default: false,
-                    optional: true,
-                    reloadProps: true,
-                };
-                
-                if (this.opcje_zaawansowane === true) {
-                    // Dodawanie pliku do notatki
-                    props.dodac_plik = {
-                        type: "boolean",
-                        label: "Dodać plik do notatki",
-                        description: "Ustaw na **True**, aby dodać plik audio do właściwości plików w Notion.",
-                        default: false,
-                        reloadProps: true,
-                    };
-                    
-                    if (this.dodac_plik === true) {
-                        props.wlasciwoscPliku = {
-                            type: "string",
-                            label: "Właściwość pliku",
-                            description: "Wybierz właściwość typu Files dla pliku audio.",
-                            options: filesProps.map(prop => ({ label: prop, value: prop })),
-                            optional: true,
-                        };
-                        
-                        props.plan_notion = {
-                            type: "string",
-                            label: "Plan Notion",
-                            description: "Wybierz swój plan Notion. Wpłynie to na maksymalny rozmiar pliku, który można przesłać.",
-                            options: [
-                                "Darmowy (max 4.8MB)",
-                                "Płatny (max 1GB)"
-                            ],
-                            default: "Darmowy (max 4.8MB)",
-                        };
-                        
-                        // Nazwa pliku tylko jeśli dodajemy plik
-                        props.wlasciwoscNazwyPliku = {
-                            type: "string",
-                            label: "Nazwa pliku",
-                            description: "Wybierz właściwość tekstu dla nazwy pliku.",
-                            options: textProps.map(prop => ({ label: prop, value: prop })),
-                            optional: true,
-                        };
-                    }
-                    
-                    // Opcje języka
+        // Dodaj własne polecenie do opcji podsumowania, jeśli istnieje
+        if (this.wlasne_polecenia_ai) {
+          allSummaryOptions.push(this.wlasne_polecenia_ai);
+        }
 
-                    props.jezyk_tytulu = {
-                        type: "string",
-                        label: "Język tytułu",
-                        description: "Wybierz język dla tytułu notatki. Jeśli nie wybierzesz, tytuł będzie w tym samym języku co transkrypcja.",
-                        options: lang.LANGUAGES.map((lang) => ({
-                            label: lang.label,
-                            value: lang.value,
-                        })),
-                        optional: true,
-                    };
+        // Pobierz zapisane własne polecenia z poprzednich uruchomień
+        // Ta część będzie uzupełniona w funkcji run()
+        
+        // Określanie domyślnych opcji podsumowania na podstawie tagu
+        let defaultSummaryOptions;
 
-                    props.jezyk_transkrypcji = {
-                        type: "string",
-                        label: "Język transkrypcji (opcjonalnie)",
-                        description: `Wybierz preferowany język wyjściowy. Whisper spróbuje przetłumaczyć audio na ten język.
-                        
-                        Jeśli nie znasz języka pliku, możesz zostawić to pole puste, a Whisper spróbuje wykryć język i zapisać transkrypcję w tym samym języku.`,
-                        optional: true,
-                        options: lang.LANGUAGES.map((lang) => ({
-                            label: lang.label,
-                            value: lang.value,
-                        })),
-                        reloadProps: true,
-                    };
+        if (this.wartoscTagu === "🎙️ Nagranie") {
+          defaultSummaryOptions = [
+            "Podsumowanie", 
+            "Główne punkty", 
+            "Elementy do wykonania", 
+            "Pytania uzupełniające",
+            "Historie",
+            "Odniesienia",
+            "Powiązane tematy",
+            "Rozdziały"
+            
+            // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 3
+            // Jeśli chcesz, aby nowa opcja była domyślnie zaznaczona dla nagrań, dodaj ją tutaj:
+            // "Nazwa nowej opcji",
+          ];
+        } else if (this.wartoscTagu === "📓 Dziennik") {
+          defaultSummaryOptions = [
+            "Ogólny opis dnia",
+            "Kluczowe wydarzenia",
+            "Osiągnięcia",
+            "Wyzwania",
+            "Wnioski",
+            "Plan działania",
+            "Rozwój osobisty",
+            "Refleksja",
+            "Ocena dnia (1-100)",
+            "AI rekomendacje"
+            
+            // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 4
+            // Jeśli chcesz, aby nowa opcja była domyślnie zaznaczona dla dzienników, dodaj ją tutaj:
+            // "Nazwa nowej opcji",
+          ];
+        } else {
+          // Dla innych tagów lub gdy tag nie jest wybrany
+          defaultSummaryOptions = ["Podsumowanie"];
+        }
+
+        // Tworzenie opisu z wyjaśnieniami dla każdej opcji
+        const optionsDescriptionsText = allSummaryOptions
+          .map(option => `- **${option}**: ${optionsDescriptions[option] || ""}`)
+          .join("\n");
+
+        props.opcje_podsumowania = {
+          type: "string[]",
+          label: "Opcje podsumowania",
+          description: `Wybierz opcje do uwzględnienia w Twoim podsumowaniu. Każda opcja dodaje inny rodzaj analizy:\n\n${optionsDescriptionsText}`,
+          options: allSummaryOptions,
+          default: defaultSummaryOptions,
+          optional: false,
+        };
+                
+        // Pozostałe właściwości Notion
+        props.wlasciwoscCzasu = {
+          type: "string",
+          label: "Czas trwania",
+          description: "Wybierz właściwość czasu trwania. Musi być typu Number.",
+          options: numberProps.map(prop => ({ label: prop, value: prop })),
+          optional: true,
+        };
+                
+        props.wlasciwoscKosztu = {
+          type: "string",
+          label: "Koszt notatki",
+          description: "Wybierz właściwość kosztu. Musi być typu Number.",
+          options: numberProps.map(prop => ({ label: prop, value: prop })),
+          optional: true,
+        };
+                
+        props.wlasciwoscDaty = {
+          type: "string",
+          label: "Data notatki",
+          description: "Wybierz właściwość daty dla notatki.",
+          options: dateProps.map(prop => ({ label: prop, value: prop })),
+          optional: true,
+        };
+                
+        props.wlasciwoscLinkuPliku = {
+          type: "string",
+          label: "Link do pliku",
+          description: "Wybierz właściwość URL dla linku do pliku.",
+          options: urlProps.map(prop => ({ label: prop, value: prop })),
+          optional: true,
+        };
+                
+        // Opcje zaawansowane
+        props.opcje_zaawansowane = {
+          type: "boolean",
+          label: "Opcje zaawansowane",
+          description: `Ustaw na **True**, aby włączyć opcje zaawansowane.`,
+          default: false,
+          optional: true,
+          reloadProps: true,
+        };
+                
+        if (this.opcje_zaawansowane === true) {
+          // Dodawanie pliku do notatki
+          props.dodac_plik = {
+            type: "boolean",
+            label: "Dodać plik do notatki",
+            description: "Ustaw na **True**, aby dodać plik audio do właściwości plików w Notion.",
+            default: false,
+            reloadProps: true,
+          };
                     
-                    props.jezyk_podsumowania = {
-                        type: "string",
-                        label: "Język podsumowania",
-                        description: `Określ język dla treści podsumowania. Model AI spróbuje podsumować transkrypcję w wybranym języku.
+          if (this.dodac_plik === true) {
+            props.wlasciwoscPliku = {
+              type: "string",
+              label: "Właściwość pliku",
+              description: "Wybierz właściwość typu Files dla pliku audio.",
+              options: filesProps.map(prop => ({ label: prop, value: prop })),
+              optional: true,
+            };
                         
-                        Jeśli zostawisz to pole puste, model AI użyje tego samego języka co transkrypcja.`,
-                        optional: true,
-                        options: lang.LANGUAGES.map((lang) => ({
-                            label: lang.label,
-                            value: lang.value,
-                        })),
-                        reloadProps: true,
-                    };
+            props.plan_notion = {
+              type: "string",
+              label: "Plan Notion",
+              description: "Wybierz swój plan Notion. Wpłynie to na maksymalny rozmiar pliku, który można przesłać.",
+              options: [
+                "Darmowy (max 4.8MB)",
+                "Płatny (max 1GB)"
+              ],
+              default: "Darmowy (max 4.8MB)",
+            };
+                        
+            // Nazwa pliku tylko jeśli dodajemy plik
+            props.wlasciwoscNazwyPliku = {
+              type: "string",
+              label: "Nazwa pliku",
+              description: "Wybierz właściwość tekstu dla nazwy pliku.",
+              options: textProps.map(prop => ({ label: prop, value: prop })),
+              optional: true,
+            };
+          }
                     
-if (this.jezyk_podsumowania) {
+          // Opcje języka
+          props.jezyk_tytulu = {
+            type: "string",
+            label: "Język tytułu",
+            description: "Wybierz język dla tytułu notatki. Jeśli nie wybierzesz, tytuł będzie w tym samym języku co transkrypcja.",
+            options: lang.LANGUAGES.map((lang) => ({
+              label: lang.label,
+              value: lang.value,
+            })),
+            optional: true,
+          };
+
+          props.jezyk_transkrypcji = {
+            type: "string",
+            label: "Język transkrypcji (opcjonalnie)",
+            description: `Wybierz preferowany język wyjściowy. Whisper spróbuje przetłumaczyć audio na ten język.
+                        
+            Jeśli nie znasz języka pliku, możesz zostawić to pole puste, a Whisper spróbuje wykryć język i zapisać transkrypcję w tym samym języku.`,
+            optional: true,
+            options: lang.LANGUAGES.map((lang) => ({
+              label: lang.label,
+              value: lang.value,
+            })),
+            reloadProps: true,
+          };
+                    
+          props.jezyk_podsumowania = {
+            type: "string",
+            label: "Język podsumowania",
+            description: `Określ język dla treści podsumowania. Model AI spróbuje podsumować transkrypcję w wybranym języku.
+                        
+            Jeśli zostawisz to pole puste, model AI użyje tego samego języka co transkrypcja.`,
+            optional: true,
+            options: lang.LANGUAGES.map((lang) => ({
+              label: lang.label,
+              value: lang.value,
+            })),
+            reloadProps: true,
+          };
+                    
+          // Dodaj opcje tłumaczenia tylko gdy wybrano język podsumowania
+          if (this.jezyk_podsumowania) {
             props.przetlumacz_transkrypcje = {
-                type: "string",
-                label: "Dodaj tłumaczenie (transkrypcja)",
-                description: `Wybierz opcję, jeśli chcesz, aby model AI przetłumaczył transkrypcję na wybrany język podsumowania.
+              type: "string",
+              label: "Dodaj tłumaczenie (transkrypcja)",
+              description: `Wybierz opcję, jeśli chcesz, aby model AI przetłumaczył transkrypcję na wybrany język podsumowania.
 
 Oto scenariusze tłumaczenia (na przykładzie języka polskiego i angielskiego):
 
@@ -549,73 +613,75 @@ Efekt:
 **Uwaga:** Zwiększy to koszt wykonania o ok. 0,003 USD za 1000 słów. Ta opcja zawsze używa domyślnego modelu gpt-3.5-turbo. Ta opcja również zwiększy czas wykonania, zmniejszając maksymalną długość pliku audio, który można obsłużyć przy obecnych ustawieniach limitu czasu.
 
 Tłumaczenie nastąpi tylko wtedy, gdy wykryty język transkrypcji różni się od wybranego języka podsumowania.`,
-                optional: true,
-                options: [
-                    "Przetłumacz i zachowaj oryginał",
-                    "Przetłumacz tylko",
-                    "Nie tłumacz"
-                ],
+              optional: true,
+              options: [
+                "Przetłumacz i zachowaj oryginał",
+                "Przetłumacz tylko",
+                "Nie tłumacz"
+              ],
+              default: "Przetłumacz i zachowaj oryginał",
             };
+          }
+                    
+          // Parametry AI
+          props.gestosc_podsumowania = {
+            type: "integer",
+            label: "Gęstość podsumowania",
+            description: `Ustawia maksymalną liczbę tokenów dla każdego fragmentu transkrypcji.`,
+            min: 500,
+            max: this.usluga_ai === "Anthropic" ? 50000 : 5000,
+            default: 2750,
+            optional: true,
+          };
+                    
+          props.szczegolowoc = {
+            type: "string",
+            label: "Szczegółowość",
+            description: "Poziom szczegółowości podsumowania i list.",
+            options: ["Niska", "Średnia", "Wysoka"],
+            default: "Średnia",
+          };
+                    
+          props.temperatura = {
+            type: "integer",
+            label: "Temperatura",
+            description: "Temperatura dla żądań AI. Wyższa = bardziej kreatywne wyniki.",
+            min: 0,
+            max: 10,
+            default: 2,
+          };
+                    
+          props.rozmiar_fragmentu = {
+            type: "integer",
+            label: "Rozmiar fragmentu (MB)",
+            description: "Rozmiar fragmentu audio w megabajtach.",
+            min: 10,
+            max: 50,
+            default: 24,
+          };
+                    
+          props.wylacz_moderacje = {
+            type: "boolean",
+            label: "Wyłącz moderację",
+            description: "Wyłącza sprawdzanie moderacji.",
+            default: false,
+          };
+                    
+          props.przerwij_bez_czasu = {
+            type: "boolean",
+            label: "Przerwij bez czasu",
+            description: "Przerywa, jeśli czas trwania nie może być określony.",
+            default: false,
+          };
         }
-                    
-                    // Parametry AI
-                    props.gestosc_podsumowania = {
-                        type: "integer",
-                        label: "Gęstość podsumowania",
-                        description: `Ustawia maksymalną liczbę tokenów dla każdego fragmentu transkrypcji.`,
-                        min: 500,
-                        max: this.usluga_ai === "Anthropic" ? 50000 : 5000,
-                        default: 2750,
-                        optional: true,
-                    };
-                    
-                    props.szczegolowoc = {
-                        type: "string",
-                        label: "Szczegółowość",
-                        description: "Poziom szczegółowości podsumowania i list.",
-                        options: ["Niska", "Średnia", "Wysoka"],
-                        default: "Średnia",
-                    };
-                    
-                    props.temperatura = {
-                        type: "integer",
-                        label: "Temperatura",
-                        description: "Temperatura dla żądań AI. Wyższa = bardziej kreatywne wyniki.",
-                        min: 0,
-                        max: 10,
-                        default: 2,
-                    };
-                    
-                    props.rozmiar_fragmentu = {
-                        type: "integer",
-                        label: "Rozmiar fragmentu (MB)",
-                        description: "Rozmiar fragmentu audio w megabajtach.",
-                        min: 10,
-                        max: 50,
-                        default: 24,
-                    };
-                    
-                    props.wylacz_moderacje = {
-                        type: "boolean",
-                        label: "Wyłącz moderację",
-                        description: "Wyłącza sprawdzanie moderacji.",
-                        default: false,
-                    };
-                    
-                    props.przerwij_bez_czasu = {
-                        type: "boolean",
-                        label: "Przerwij bez czasu",
-                        description: "Przerywa, jeśli czas trwania nie może być określony.",
-                        default: false,
-                    };
-                }
-            } catch (error) {
-                console.error("Błąd podczas pobierania właściwości bazy danych Notion:", error);
-            }
-        }
+      } catch (error) {
+        console.error("Błąd podczas pobierania właściwości bazy danych Notion:", error);
+      }
+    }
         
-        return props;
-    },
+    return props;
+  },
+}
     methods: {
         ...common.methods,
         ...translation.methods, // Importujemy metody tłumaczenia
@@ -2555,406 +2621,441 @@ Tłumaczenie nastąpi tylko wtedy, gdy wykryty język transkrypcji różni się 
         },
     },
     
-    async run({ steps, $ }) {
-        // Obiekt do mierzenia czasu
-        let stageDurations = {
-            setup: 0,
-            download: 0,
-            transcription: 0,
-            transcriptCleanup: 0,
-            moderation: 0,
-            summary: 0,
-            translation: 0,
-            notionCreation: 0,
-            notionUpdate: 0,
-        };
+  async run({ steps, $ }) {
+  // Obiekt do mierzenia czasu
+  let stageDurations = {
+    setup: 0,
+    download: 0,
+    transcription: 0,
+    transcriptCleanup: 0,
+    moderation: 0,
+    summary: 0,
+    translation: 0,
+    notionCreation: 0,
+    notionUpdate: 0,
+  };
 
-        function totalDuration(obj) {
-            return Object.keys(obj)
-                .filter((key) => typeof obj[key] === "number" && key !== "total")
-                .reduce((a, b) => a + obj[b], 0);
+  function totalDuration(obj) {
+    return Object.keys(obj)
+      .filter((key) => typeof obj[key] === "number" && key !== "total")
+      .reduce((a, b) => a + obj[b], 0);
+  }
+
+  let previousTime = process.hrtime.bigint();
+
+  /* -- Etap konfiguracji -- */
+  const fileID = this.steps.trigger.event.id;
+  const testEventId = "52776A9ACB4F8C54!134";
+
+  if (fileID === testEventId) {
+    throw new Error(
+      `Oops, ten workflow nie zadziała z przyciskiem **Generate Test Event**. Prześlij plik audio do Dropbox, wybierz go z listy poniżej przycisku.`
+    );
+  }
+
+  console.log("Sprawdzam wielkość pliku...");
+  await this.checkSize(this.steps.trigger.event.size);
+
+  console.log("Sprawdzam ustawienia języka...");
+  this.setLanguages();
+
+  // Zapisywanie i odczytywanie własnych poleceń AI
+  try {
+    // Odczytywanie istniejących własnych poleceń z zmiennych środowiskowych Pipedream
+    let savedCustomPrompts = [];
+    if ($.service.db) {
+      const savedPromptsStr = await $.service.db.get("customPrompts");
+      if (savedPromptsStr) {
+        try {
+          savedCustomPrompts = JSON.parse(savedPromptsStr);
+          console.log("Odczytano zapisane własne polecenia:", savedCustomPrompts);
+        } catch (e) {
+          console.log("Błąd parsowania zapisanych poleceń:", e);
+          savedCustomPrompts = [];
         }
+      }
+    }
 
-        let previousTime = process.hrtime.bigint();
+    // Dodaj aktualne własne polecenie, jeśli istnieje i nie ma go jeszcze w zapisanych
+    if (this.wlasne_polecenia_ai && this.wlasne_polecenia_ai.trim() !== "") {
+      const newPrompt = this.wlasne_polecenia_ai.trim();
+      if (!savedCustomPrompts.includes(newPrompt)) {
+        savedCustomPrompts.push(newPrompt);
+        console.log("Dodano nowe polecenie do zapisanych:", newPrompt);
+      }
 
-        /* -- Etap konfiguracji -- */
-        const fileID = this.steps.trigger.event.id;
-        const testEventId = "52776A9ACB4F8C54!134";
+      // Zapisz zaktualizowane polecenia z powrotem do zmiennych środowiskowych
+      if ($.service.db) {
+        await $.service.db.set("customPrompts", JSON.stringify(savedCustomPrompts));
+        console.log("Zapisano zaktualizowane polecenia");
+      }
+    }
+  } catch (error) {
+    console.log("Błąd podczas przetwarzania własnych poleceń:", error);
+    // Nie przerywaj wykonania, jeśli wystąpi błąd z zapisem/odczytem własnych poleceń
+  }
 
-        if (fileID === testEventId) {
-            throw new Error(
-                `Ten workflow nie zadziała z przyciskiem **Generate Test Event**. Prześlij plik audio do Dropbox, wybierz go z listy poniżej przycisku.`
-            );
-        }
+  const logSettings = {
+    "Usługa AI": this.usluga_ai,
+    "Model Chat": this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+    "Opcje podsumowania": this.opcje_podsumowania,
+    "Gęstość podsumowania": this.gestosc_podsumowania || "2750 (domyślna)",
+    "Język podsumowania": this.jezyk_podsumowania || "Nie ustawiono",
+    "Język tytułu": this.jezyk_tytulu || "Nie ustawiono",
+    "Język transkrypcji": this.jezyk_transkrypcji || "Nie ustawiono",
+    "Poziom szczegółowości": this.szczegolowoc || "Średnia (domyślna)",
+    "Rozmiar fragmentu": this.rozmiar_fragmentu || "24 (domyślny)",
+    "Sprawdzanie moderacji": this.wylacz_moderacje ? "Wyłączone" : "Włączone",
+    "Temperatura": this.temperatura || "2 (domyślna)",
+    "Własne polecenia AI": this.wlasne_polecenia_ai || "Brak",
+  };
 
-        console.log("Sprawdzam wielkość pliku...");
-        await this.checkSize(this.steps.trigger.event.size);
+  console.log("Ustawienia:");
+  console.dir(logSettings);
 
-        console.log("Sprawdzam ustawienia języka...");
-        this.setLanguages();
+  const notion = new Client({ auth: this.notion.$auth.oauth_access_token });
+  const fileInfo = { log_settings: logSettings };
 
-        const logSettings = {
-            "Usługa AI": this.usluga_ai,
-            "Model Chat": this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
-            "Opcje podsumowania": this.opcje_podsumowania,
-            "Gęstość podsumowania": this.gestosc_podsumowania || "2750 (domyślna)",
-            "Język podsumowania": this.jezyk_podsumowania || "Nie ustawiono",
-            "Język tytułu": this.jezyk_tytulu || "Nie ustawiono",
-            "Język transkrypcji": this.jezyk_transkrypcji || "Nie ustawiono",
-            "Poziom szczegółowości": this.szczegolowoc || "Średnia (domyślna)",
-            "Rozmiar fragmentu": this.rozmiar_fragmentu || "24 (domyślny)",
-            "Sprawdzanie moderacji": this.wylacz_moderacje ? "Wyłączone" : "Włączone",
-            "Temperatura": this.temperatura || "2 (domyślna)",
-            "Własne polecenia AI": this.wlasne_polecenia_ai || "Brak",
-        };
+  // Zapisz czas etapu konfiguracji
+  stageDurations.setup = Number(process.hrtime.bigint() - previousTime) / 1e6;
+  console.log(`Czas konfiguracji: ${stageDurations.setup}ms`);
+  previousTime = process.hrtime.bigint();
 
-        console.log("Ustawienia:");
-        console.dir(logSettings);
+  /* -- Etap pobierania -- */
+  if (this.steps.google_drive_download?.$return_value?.name) {
+    // Google Drive
+    fileInfo.cloud_app = "Google Drive";
+    fileInfo.file_name = this.steps.google_drive_download.$return_value.name.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\\/]/g, "");
+    fileInfo.path = `/tmp/${fileInfo.file_name}`;
+    fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
+    fileInfo.link = this.steps.trigger.event.webViewLink;
+    
+    if (!config.supportedMimes.includes(fileInfo.mime)) {
+      throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
+    }
+  } else if (this.steps.download_file?.$return_value?.name) {
+    // Google Drive alternatywna metoda
+    fileInfo.cloud_app = "Google Drive";
+    fileInfo.file_name = this.steps.download_file.$return_value.name.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\\/]/g, "");
+    fileInfo.path = `/tmp/${fileInfo.file_name}`;
+    fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
+    fileInfo.link = this.steps.trigger.event.webViewLink;
+    
+    if (!config.supportedMimes.includes(fileInfo.mime)) {
+      throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
+    }
+  } else if (this.steps.ms_onedrive_download?.$return_value && 
+    /^\/tmp\/.+/.test(this.steps.ms_onedrive_download.$return_value)) {
+    // OneDrive
+    fileInfo.cloud_app = "OneDrive";
+    fileInfo.path = this.steps.ms_onedrive_download.$return_value.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\]/g, "");
+    fileInfo.file_name = fileInfo.path.replace(/^\/tmp\//, "");
+    fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
+    fileInfo.link = this.steps.trigger.event.webUrl;
+    
+    if (!config.supportedMimes.includes(fileInfo.mime)) {
+      throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
+    }
+  } else {
+    // Dropbox
+    fileInfo.cloud_app = "Dropbox";
+    Object.assign(
+      fileInfo,
+      await this.downloadToTmp(
+        this.steps.trigger.event.link,
+        this.steps.trigger.event.path_lower,
+        this.steps.trigger.event.name
+      )
+    );
+    fileInfo.link = encodeURI("https://www.dropbox.com/home" + this.steps.trigger.event.path_lower);
+  }
 
-        const notion = new Client({ auth: this.notion.$auth.oauth_access_token });
-        const fileInfo = { log_settings: logSettings };
+  config.filePath = fileInfo.path;
+  config.fileName = fileInfo.file_name;
+  config.fileLink = fileInfo.link;
 
-        // Zapisz czas etapu konfiguracji
-        stageDurations.setup = Number(process.hrtime.bigint() - previousTime) / 1e6;
-        console.log(`Czas konfiguracji: ${stageDurations.setup}ms`);
-        previousTime = process.hrtime.bigint();
+  fileInfo.duration = await this.getDuration(fileInfo.path);
 
-        /* -- Etap pobierania -- */
-        if (this.steps.google_drive_download?.$return_value?.name) {
-            // Google Drive
-            fileInfo.cloud_app = "Google Drive";
-            fileInfo.file_name = this.steps.google_drive_download.$return_value.name.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\\/]/g, "");
-            fileInfo.path = `/tmp/${fileInfo.file_name}`;
-            fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
-            fileInfo.link = this.steps.trigger.event.webViewLink;
-            
-            if (!config.supportedMimes.includes(fileInfo.mime)) {
-                throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
-            }
-        } else if (this.steps.download_file?.$return_value?.name) {
-            // Google Drive alternatywna metoda
-            fileInfo.cloud_app = "Google Drive";
-            fileInfo.file_name = this.steps.download_file.$return_value.name.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\\/]/g, "");
-            fileInfo.path = `/tmp/${fileInfo.file_name}`;
-            fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
-            fileInfo.link = this.steps.trigger.event.webViewLink;
-            
-            if (!config.supportedMimes.includes(fileInfo.mime)) {
-                throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
-            }
-        } else if (this.steps.ms_onedrive_download?.$return_value && 
-            /^\/tmp\/.+/.test(this.steps.ms_onedrive_download.$return_value)) {
-            // OneDrive
-            fileInfo.cloud_app = "OneDrive";
-            fileInfo.path = this.steps.ms_onedrive_download.$return_value.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\]/g, "");
-            fileInfo.file_name = fileInfo.path.replace(/^\/tmp\//, "");
-            fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
-            fileInfo.link = this.steps.trigger.event.webUrl;
-            
-            if (!config.supportedMimes.includes(fileInfo.mime)) {
-                throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
-            }
-        } else {
-            // Dropbox
-            fileInfo.cloud_app = "Dropbox";
-            Object.assign(
-                fileInfo,
-                await this.downloadToTmp(
-                    this.steps.trigger.event.link,
-                    this.steps.trigger.event.path_lower,
-                    this.steps.trigger.event.name
-                )
-            );
-            fileInfo.link = encodeURI("https://www.dropbox.com/home" + this.steps.trigger.event.path_lower);
-        }
+  // Zapisz czas etapu pobierania
+  stageDurations.download = Number(process.hrtime.bigint() - previousTime) / 1e6;
+  console.log(`Czas pobierania: ${stageDurations.download}ms (${stageDurations.download / 1000}s)`);
+  previousTime = process.hrtime.bigint();
 
-        config.filePath = fileInfo.path;
-        config.fileName = fileInfo.file_name;
-        config.fileLink = fileInfo.link;
+  /* -- Etap transkrypcji -- */
+  const openai = new OpenAI({
+    apiKey: this.openai?.$auth.api_key,
+  });
 
-        fileInfo.duration = await this.getDuration(fileInfo.path);
+  // Inicjalizacja klienta Anthropic, jeśli potrzebny
+  let anthropic = null;
+  if (this.usluga_ai === "Anthropic" && this.anthropic) {
+    anthropic = new Anthropic({
+      apiKey: this.anthropic.$auth.api_key,
+    });
+  }
 
-        // Zapisz czas etapu pobierania
-        stageDurations.download = Number(process.hrtime.bigint() - previousTime) / 1e6;
-        console.log(`Czas pobierania: ${stageDurations.download}ms (${stageDurations.download / 1000}s)`);
-        previousTime = process.hrtime.bigint();
+  fileInfo.whisper = await this.chunkFileAndTranscribe({ file: fileInfo.path }, openai);
+  await this.cleanTmp();
 
-        /* -- Etap transkrypcji -- */
-        const openai = new OpenAI({
-            apiKey: this.openai?.$auth.api_key,
-        });
+  // Zapisz czas etapu transkrypcji
+  stageDurations.transcription = Number(process.hrtime.bigint() - previousTime) / 1e6;
+  console.log(`Czas transkrypcji: ${stageDurations.transcription}ms (${stageDurations.transcription / 1000}s)`);
+  previousTime = process.hrtime.bigint();
 
-        // Inicjalizacja klienta Anthropic, jeśli potrzebny
-        let anthropic = null;
-        if (this.usluga_ai === "Anthropic" && this.anthropic) {
-            anthropic = new Anthropic({
-                apiKey: this.anthropic.$auth.api_key,
-            });
-        }
+  /* -- Etap czyszczenia transkrypcji -- */
+  const maxTokens = this.gestosc_podsumowania || (this.usluga_ai === "Anthropic" ? 5000 : 2750);
+  console.log(`Maksymalna liczba tokenów na fragment: ${maxTokens}`);
 
-        fileInfo.whisper = await this.chunkFileAndTranscribe({ file: fileInfo.path }, openai);
-        await this.cleanTmp();
+  fileInfo.full_transcript = await this.combineWhisperChunks(fileInfo.whisper);
+  fileInfo.longest_gap = this.findLongestPeriodGap(fileInfo.full_transcript, maxTokens);
 
-        // Zapisz czas etapu transkrypcji
-        stageDurations.transcription = Number(process.hrtime.bigint() - previousTime) / 1e6;
-        console.log(`Czas transkrypcji: ${stageDurations.transcription}ms (${stageDurations.transcription / 1000}s)`);
-        previousTime = process.hrtime.bigint();
+  if (fileInfo.longest_gap.encodedGapLength > maxTokens) {
+    console.log(`Najdłuższe zdanie przekracza limit tokenów. Fragmenty będą dzielone w środku zdań.`);
+  }
 
-        /* -- Etap czyszczenia transkrypcji -- */
-        const maxTokens = this.gestosc_podsumowania || (this.usluga_ai === "Anthropic" ? 5000 : 2750);
-        console.log(`Maksymalna liczba tokenów na fragment: ${maxTokens}`);
+  // Zapisz czas etapu czyszczenia
+  stageDurations.transcriptCleanup = Number(process.hrtime.bigint() - previousTime) / 1e6;
+  console.log(`Czas czyszczenia transkrypcji: ${stageDurations.transcriptCleanup}ms`);
+  previousTime = process.hrtime.bigint();
 
-        fileInfo.full_transcript = await this.combineWhisperChunks(fileInfo.whisper);
-        fileInfo.longest_gap = this.findLongestPeriodGap(fileInfo.full_transcript, maxTokens);
+  /* -- Etap moderacji (opcjonalnie) -- */
+  if (!this.wylacz_moderacje) {
+    await this.moderationCheck(fileInfo.full_transcript, openai);
+    
+    stageDurations.moderation = Number(process.hrtime.bigint() - previousTime) / 1e6;
+    console.log(`Czas moderacji: ${stageDurations.moderation}ms (${stageDurations.moderation / 1000}s)`);
+    previousTime = process.hrtime.bigint();
+  } else {
+    console.log(`Moderacja wyłączona.`);
+  }
 
-        if (fileInfo.longest_gap.encodedGapLength > maxTokens) {
-            console.log(`Najdłuższe zdanie przekracza limit tokenów. Fragmenty będą dzielone w środku zdań.`);
-        }
+  /* -- Etap podsumowania -- */
+  const encodedTranscript = encode(fileInfo.full_transcript);
+  console.log(`Pełna transkrypcja ma ${encodedTranscript.length} tokenów.`);
 
-        // Zapisz czas etapu czyszczenia
-        stageDurations.transcriptCleanup = Number(process.hrtime.bigint() - previousTime) / 1e6;
-        console.log(`Czas czyszczenia transkrypcji: ${stageDurations.transcriptCleanup}ms`);
-        previousTime = process.hrtime.bigint();
+  fileInfo.transcript_chunks = this.splitTranscript(
+    encodedTranscript,
+    maxTokens,
+    fileInfo.longest_gap
+  );
 
-        /* -- Etap moderacji (opcjonalnie) -- */
-        if (!this.wylacz_moderacje) {
-            await this.moderationCheck(fileInfo.full_transcript, openai);
-            
-            stageDurations.moderation = Number(process.hrtime.bigint() - previousTime) / 1e6;
-            console.log(`Czas moderacji: ${stageDurations.moderation}ms (${stageDurations.moderation / 1000}s)`);
-            previousTime = process.hrtime.bigint();
-        } else {
-            console.log(`Moderacja wyłączona.`);
-        }
+  // Utwórz klienta AI na podstawie wyboru usługi
+  const llm = this.usluga_ai === "Anthropic" ? anthropic : openai;
 
-        /* -- Etap podsumowania -- */
-        const encodedTranscript = encode(fileInfo.full_transcript);
-        console.log(`Pełna transkrypcja ma ${encodedTranscript.length} tokenów.`);
+  // Jeśli nie wybrano opcji podsumowania, generuj tylko tytuł
+  if (!this.opcje_podsumowania || this.opcje_podsumowania.length === 0) {
+    const titleArr = [fileInfo.transcript_chunks[0]];
+    fileInfo.summary = await this.sendToChat(llm, titleArr);
+  } else {
+    fileInfo.summary = await this.sendToChat(llm, fileInfo.transcript_chunks);
+  }
 
-        fileInfo.transcript_chunks = this.splitTranscript(
-            encodedTranscript,
-            maxTokens,
-            fileInfo.longest_gap
-        );
+  fileInfo.formatted_chat = await this.formatChat(fileInfo.summary);
+  
+  // Przygotuj akapity transkrypcji
+  fileInfo.paragraphs = {
+    transcript: this.makeParagraphs(fileInfo.full_transcript, 1200),
+    ...(this.opcje_podsumowania.includes("Podsumowanie") && {
+      summary: this.makeParagraphs(fileInfo.formatted_chat.summary, 1200),
+    }),
+  };
 
-        // Utwórz klienta AI na podstawie wyboru usługi
-        const llm = this.usluga_ai === "Anthropic" ? anthropic : openai;
+  // Oblicz koszty
+  fileInfo.cost = {};
+  fileInfo.cost.transcript = await this.calculateTranscriptCost(
+    fileInfo.duration,
+    "openai",
+    "audio",
+    "whisper"
+  );
 
-        // Jeśli nie wybrano opcji podsumowania, generuj tylko tytuł
-        if (!this.opcje_podsumowania || this.opcje_podsumowania.length === 0) {
-            const titleArr = [fileInfo.transcript_chunks[0]];
-            fileInfo.summary = await this.sendToChat(llm, titleArr);
-        } else {
-            fileInfo.summary = await this.sendToChat(llm, fileInfo.transcript_chunks);
-        }
+  const summaryUsage = {
+    prompt_tokens: fileInfo.summary.reduce((total, item) => total + item.usage.prompt_tokens, 0),
+    completion_tokens: fileInfo.summary.reduce((total, item) => total + item.usage.completion_tokens, 0),
+  };
 
-        fileInfo.formatted_chat = await this.formatChat(fileInfo.summary);
+  fileInfo.cost.summary = await this.calculateGPTCost(
+    summaryUsage,
+    this.usluga_ai,
+    "text",
+    this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+    "Podsumowanie"
+  );
+
+  // Zapisz czas etapu podsumowania
+  stageDurations.summary = Number(process.hrtime.bigint() - previousTime) / 1e6;
+  console.log(`Czas podsumowania: ${stageDurations.summary}ms (${stageDurations.summary / 1000}s)`);
+  previousTime = process.hrtime.bigint();
+
+  /* -- Etap tłumaczenia (opcjonalnie) -- */
+  if (this.jezyk_podsumowania || this.jezyk_tytulu) {
+    console.log(`Sprawdzam język transkrypcji...`);
+
+    // Wykryj język transkrypcji
+    const detectedLanguage = await this.detectLanguage(
+      llm,
+      this.usluga_ai,
+      this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+      fileInfo.paragraphs.transcript[0]
+    );
+
+    fileInfo.language = {
+      transcript: await this.formatDetectedLanguage(
+        detectedLanguage.choices[0].message.content
+      ),
+      summary: this.jezyk_podsumowania
+        ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
+        : "Nie ustawiono",
+      title: this.jezyk_tytulu
+        ? lang.LANGUAGES.find((l) => l.value === this.jezyk_tytulu)
+        : (this.jezyk_podsumowania
+          ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
+          : "Nie ustawiono")
+    };
+
+    console.log("Informacje o językach:", JSON.stringify(fileInfo.language, null, 2));
+
+    const languageCheckUsage = {
+      prompt_tokens: detectedLanguage.usage.prompt_tokens,
+      completion_tokens: detectedLanguage.usage.completion_tokens,
+    };
+
+    fileInfo.cost.language_check = await this.calculateGPTCost(
+      languageCheckUsage,
+      this.usluga_ai,
+      "text",
+      this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+      "Sprawdzanie języka"
+    );
+
+    // Tłumaczenie transkrypcji, jeśli opcja została włączona i języki są różne
+    if (this.przetlumacz_transkrypcje?.includes("Przetłumacz") &&
+      fileInfo.language.transcript.value !== fileInfo.language.summary.value) {
+      console.log(
+        `Język transkrypcji (${fileInfo.language.transcript.label}) różni się od języka podsumowania (${fileInfo.language.summary.label}). Tłumaczę transkrypcję...`
+      );
+
+      const translatedTranscript = await this.translateParagraphs(
+        llm,
+        this.usluga_ai,
+        this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+        fileInfo.paragraphs.transcript,
+        fileInfo.language.summary,
+        this.temperatura || 2
+      );
+
+      fileInfo.paragraphs.translated_transcript = this.makeParagraphs(
+        translatedTranscript.paragraphs.join(" "),
+        1200
+      );
+      
+      fileInfo.cost.translated_transcript = await this.calculateGPTCost(
+        translatedTranscript.usage,
+        this.usluga_ai,
+        "text",
+        translatedTranscript.model,
+        "Tłumaczenie"
+      );
+
+      stageDurations.translation = Number(process.hrtime.bigint() - previousTime) / 1e6;
+      console.log(`Czas tłumaczenia: ${stageDurations.translation}ms (${stageDurations.translation / 1000}s)`);
+      previousTime = process.hrtime.bigint();
+    }
+    
+    // Tłumaczenie tytułu, jeśli to potrzebne
+    if (this.jezyk_tytulu && 
+      fileInfo.language.transcript.value !== fileInfo.language.title.value && 
+      fileInfo.formatted_chat.title) {
+      console.log(
+        `Język transkrypcji (${fileInfo.language.transcript.label}) różni się od języka tytułu (${fileInfo.language.title.label}). Tłumaczę tytuł...`
+      );
+      
+      // Systemowy prompt dla tłumaczenia tytułu
+      const titleSystemPrompt = `Przetłumacz następujący tytuł na język ${fileInfo.language.title.label} (kod: "${fileInfo.language.title.value}"). 
+      Zwróć tylko przetłumaczony tytuł, bez żadnych dodatkowych wyjaśnień czy komentarzy.`;
+      
+      try {
+        let translatedTitleResponse;
         
-        // Przygotuj akapity transkrypcji
-        fileInfo.paragraphs = {
-            transcript: this.makeParagraphs(fileInfo.full_transcript, 1200),
-            ...(this.opcje_podsumowania.includes("Podsumowanie") && {
-                summary: this.makeParagraphs(fileInfo.formatted_chat.summary, 1200),
-            }),
-        };
-
-        // Oblicz koszty
-        fileInfo.cost = {};
-        fileInfo.cost.transcript = await this.calculateTranscriptCost(
-            fileInfo.duration,
-            "openai",
-            "audio",
-            "whisper"
-        );
-
-        const summaryUsage = {
-            prompt_tokens: fileInfo.summary.reduce((total, item) => total + item.usage.prompt_tokens, 0),
-            completion_tokens: fileInfo.summary.reduce((total, item) => total + item.usage.completion_tokens, 0),
-        };
-
-        fileInfo.cost.summary = await this.calculateGPTCost(
-            summaryUsage,
-            this.usluga_ai,
-            "text",
-            this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
-            "Podsumowanie"
-        );
-
-        // Zapisz czas etapu podsumowania
-        stageDurations.summary = Number(process.hrtime.bigint() - previousTime) / 1e6;
-        console.log(`Czas podsumowania: ${stageDurations.summary}ms (${stageDurations.summary / 1000}s)`);
-        previousTime = process.hrtime.bigint();
-
-        /* -- Etap tłumaczenia (opcjonalnie) -- */
-        if (this.jezyk_podsumowania || this.jezyk_tytulu) {
-            console.log(`Sprawdzam język transkrypcji...`);
-
-            // Wykryj język transkrypcji
-            const detectedLanguage = await this.detectLanguage(
-                llm,
-                this.usluga_ai,
-                this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
-                fileInfo.paragraphs.transcript[0]
-            );
-
-            fileInfo.language = {
-                transcript: await this.formatDetectedLanguage(
-                    detectedLanguage.choices[0].message.content
-                ),
-                summary: this.jezyk_podsumowania
-                    ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
-                    : "Nie ustawiono",
-                title: this.jezyk_tytulu
-                    ? lang.LANGUAGES.find((l) => l.value === this.jezyk_tytulu)
-                    : (this.jezyk_podsumowania
-                        ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
-                        : "Nie ustawiono")
-            };
-
-            console.log("Informacje o językach:", JSON.stringify(fileInfo.language, null, 2));
-
-            const languageCheckUsage = {
-                prompt_tokens: detectedLanguage.usage.prompt_tokens,
-                completion_tokens: detectedLanguage.usage.completion_tokens,
-            };
-
-            fileInfo.cost.language_check = await this.calculateGPTCost(
-                languageCheckUsage,
-                this.usluga_ai,
-                "text",
-                this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
-                "Sprawdzanie języka"
-            );
-
-            // Tłumaczenie transkrypcji, jeśli opcja została włączona i języki są różne
-            if (this.przetlumacz_transkrypcje?.includes("Przetłumacz") &&
-                fileInfo.language.transcript.value !== fileInfo.language.summary.value) {
-                console.log(
-                    `Język transkrypcji (${fileInfo.language.transcript.label}) różni się od języka podsumowania (${fileInfo.language.summary.label}). Tłumaczę transkrypcję...`
-                );
-
-                const translatedTranscript = await this.translateParagraphs(
-                    llm,
-                    this.usluga_ai,
-                    this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
-                    fileInfo.paragraphs.transcript,
-                    fileInfo.language.summary,
-                    this.temperatura || 2
-                );
-
-                fileInfo.paragraphs.translated_transcript = this.makeParagraphs(
-                    translatedTranscript.paragraphs.join(" "),
-                    1200
-                );
-                
-                fileInfo.cost.translated_transcript = await this.calculateGPTCost(
-                    translatedTranscript.usage,
-                    this.usluga_ai,
-                    "text",
-                    translatedTranscript.model,
-                    "Tłumaczenie"
-                );
-
-                stageDurations.translation = Number(process.hrtime.bigint() - previousTime) / 1e6;
-                console.log(`Czas tłumaczenia: ${stageDurations.translation}ms (${stageDurations.translation / 1000}s)`);
-                previousTime = process.hrtime.bigint();
-            }
-            
-            // Tłumaczenie tytułu, jeśli to potrzebne
-            if (this.jezyk_tytulu && 
-                fileInfo.language.transcript.value !== fileInfo.language.title.value && 
-                fileInfo.formatted_chat.title) {
-                console.log(
-                    `Język transkrypcji (${fileInfo.language.transcript.label}) różni się od języka tytułu (${fileInfo.language.title.label}). Tłumaczę tytuł...`
-                );
-                
-                // Systemowy prompt dla tłumaczenia tytułu
-                const titleSystemPrompt = `Przetłumacz następujący tytuł na język ${fileInfo.language.title.label} (kod: "${fileInfo.language.title.value}"). 
-                Zwróć tylko przetłumaczony tytuł, bez żadnych dodatkowych wyjaśnień czy komentarzy.`;
-                
-                try {
-                    let translatedTitleResponse;
-                    
-                    if (this.usluga_ai === "OpenAI") {
-                        translatedTitleResponse = await openai.chat.completions.create({
-                            model: this.model_chat || "gpt-3.5-turbo",
-                            messages: [
-                                {
-                                    role: "system",
-                                    content: titleSystemPrompt,
-                                },
-                                {
-                                    role: "user",
-                                    content: fileInfo.formatted_chat.title,
-                                },
-                            ],
-                            temperature: (this.temperatura || 2) / 10,
-                        });
-                        
-                        fileInfo.formatted_chat.title = translatedTitleResponse.choices[0].message.content.trim();
-                    } else if (this.usluga_ai === "Anthropic") {
-                        translatedTitleResponse = await anthropic.messages.create({
-                            model: this.model_anthropic || "claude-3-5-haiku-20241022",
-                            max_tokens: 100,
-                            messages: [
-                                {
-                                    role: "user",
-                                    content: fileInfo.formatted_chat.title,
-                                }
-                            ],
-                            system: titleSystemPrompt,
-                            temperature: (this.temperatura || 2) / 10,
-                        });
-                        
-                        fileInfo.formatted_chat.title = translatedTitleResponse.content[0].text.trim();
-                    }
-                    
-                    console.log(`Tytuł przetłumaczony na ${fileInfo.language.title.label}: ${fileInfo.formatted_chat.title}`);
-                } catch (error) {
-                    console.error(`Błąd podczas tłumaczenia tytułu: ${error.message}`);
-                    // Nie przerywamy działania, jeśli tłumaczenie tytułu się nie powiedzie
-                }
-            }
+        if (this.usluga_ai === "OpenAI") {
+          translatedTitleResponse = await openai.chat.completions.create({
+            model: this.model_chat || "gpt-3.5-turbo",
+            messages: [
+              {
+                role: "system",
+                content: titleSystemPrompt,
+              },
+              {
+                role: "user",
+                content: fileInfo.formatted_chat.title,
+              },
+            ],
+            temperature: (this.temperatura || 2) / 10,
+          });
+          
+          fileInfo.formatted_chat.title = translatedTitleResponse.choices[0].message.content.trim();
+        } else if (this.usluga_ai === "Anthropic") {
+          translatedTitleResponse = await anthropic.messages.create({
+            model: this.model_anthropic || "claude-3-5-haiku-20241022",
+            max_tokens: 100,
+            messages: [
+              {
+                role: "user",
+                content: fileInfo.formatted_chat.title,
+              }
+            ],
+            system: titleSystemPrompt,
+            temperature: (this.temperatura || 2) / 10,
+          });
+          
+          fileInfo.formatted_chat.title = translatedTitleResponse.content[0].text.trim();
         }
+        
+        console.log(`Tytuł przetłumaczony na ${fileInfo.language.title.label}: ${fileInfo.formatted_chat.title}`);
+      } catch (error) {
+        console.error(`Błąd podczas tłumaczenia tytułu: ${error.message}`);
+        // Nie przerywamy działania, jeśli tłumaczenie tytułu się nie powiedzie
+      }
+    }
+  }
 
-        /* -- Etap tworzenia strony w Notion -- */
-        fileInfo.notion_response = await this.createNotionPage(
-            this.steps,
-            notion,
-            fileInfo.duration,
-            fileInfo.formatted_chat,
-            fileInfo.paragraphs,
-            fileInfo.cost,
-            fileInfo.language
-        );
+  /* -- Etap tworzenia strony w Notion -- */
+  fileInfo.notion_response = await this.createNotionPage(
+    this.steps,
+    notion,
+    fileInfo.duration,
+    fileInfo.formatted_chat,
+    fileInfo.paragraphs,
+    fileInfo.cost,
+    fileInfo.language
+  );
 
-        stageDurations.notionCreation = Number(process.hrtime.bigint() - previousTime) / 1e6;
-        console.log(`Czas tworzenia strony: ${stageDurations.notionCreation}ms (${stageDurations.notionCreation / 1000}s)`);
-        previousTime = process.hrtime.bigint();
+  stageDurations.notionCreation = Number(process.hrtime.bigint() - previousTime) / 1e6;
+  console.log(`Czas tworzenia strony: ${stageDurations.notionCreation}ms (${stageDurations.notionCreation / 1000}s)`);
+  previousTime = process.hrtime.bigint();
 
-        /* -- Etap aktualizacji strony Notion -- */
-        fileInfo.updated_notion_response = await this.updateNotionPage(
-            notion,
-            fileInfo.notion_response
-        );
+  /* -- Etap aktualizacji strony Notion -- */
+  fileInfo.updated_notion_response = await this.updateNotionPage(
+    notion,
+    fileInfo.notion_response
+  );
 
-        console.log(`Informacje pomyślnie dodane do Notion.`);
+  console.log(`Informacje pomyślnie dodane do Notion.`);
 
-        stageDurations.notionUpdate = Number(process.hrtime.bigint() - previousTime) / 1e6;
-        console.log(`Czas aktualizacji: ${stageDurations.notionUpdate}ms (${stageDurations.notionUpdate / 1000}s)`);
+  stageDurations.notionUpdate = Number(process.hrtime.bigint() - previousTime) / 1e6;
+  console.log(`Czas aktualizacji: ${stageDurations.notionUpdate}ms (${stageDurations.notionUpdate / 1000}s)`);
 
-        // Podsumowanie czasu wykonania
-        stageDurations.total = totalDuration(stageDurations);
-        fileInfo.performance = stageDurations;
-        fileInfo.performance_formatted = Object.fromEntries(
-            Object.entries(fileInfo.performance).map(([stageName, stageDuration]) => [
-                stageName,
-                stageDuration > 1000
-                    ? `${(stageDuration / 1000).toFixed(2)} sekund`
-                    : `${stageDuration.toFixed(2)}ms`,
-            ])
-        );
+  // Podsumowanie czasu wykonania
+  stageDurations.total = totalDuration(stageDurations);
+  fileInfo.performance = stageDurations;
+  fileInfo.performance_formatted = Object.fromEntries(
+    Object.entries(fileInfo.performance).map(([stageName, stageDuration]) => [
+      stageName,
+      stageDuration > 1000
+        ? `${(stageDuration / 1000).toFixed(2)} sekund`
+        : `${stageDuration.toFixed(2)}ms`,
+    ])
+  );
 
-        return fileInfo;
-    },
+  return fileInfo;
 }
