@@ -52,7 +52,7 @@ export default {
     name: "Notatki głosowe do Notion",
     description: "Transkrybuje pliki audio, tworzy podsumowanie i wysyła je do Notion.",
     key: "notion-notatki-glosowe",
-    version: "1.2.5",
+    version: "1.3.1",
     type: "action",
     props: {
         steps: {
@@ -139,12 +139,140 @@ export default {
             },
             reloadProps: true,
         },
-        // Wprowadzamy dodatkowy krok konfiguracji, który wymusi wybór tagu przed opcjami podsumowania
-        konfiguracja_tagu: {
-            type: "boolean",
-            label: "Konfiguracja tagu",
-            description: "Najpierw skonfiguruj tag notatki i jego wartość poniżej, a następnie ustaw tę opcję na 'true' aby przejść do konfiguracji opcji podsumowania.",
-            default: false,
+        tytulNotatki: {
+            type: "string",
+            label: "Tytuł notatki (wymagane)",
+            description: `Wybierz właściwość tytułu dla notatek. Domyślnie nazywa się **Name**.`,
+            async options() {
+                if (this.notion && this.databaseID) {
+                    try {
+                        const notion = new Client({
+                            auth: this.notion.$auth.oauth_access_token,
+                        });
+                                
+                        const database = await notion.databases.retrieve({
+                            database_id: this.databaseID,
+                        });
+                                
+                        const properties = database.properties;
+                        const titleProps = Object.keys(properties).filter(k => properties[k].type === "title");
+                        
+                        return titleProps.map(prop => ({ label: prop, value: prop }));
+                    } catch (error) {
+                        console.error("Błąd podczas pobierania właściwości tytułu:", error);
+                        return [];
+                    }
+                }
+                return [];
+            },
+            optional: false,
+            reloadProps: true,
+        },
+        wartoscTytulu: {
+            type: "string",
+            label: "Wartość tytułu",
+            description: 'Wybierz wartość dla tytułu notatki.',
+            options: [
+                "Tytuł AI",
+                "Nazwa pliku",
+                'Oba ("Nazwa pliku – Tytuł AI")',
+            ],
+            default: "Tytuł AI",
+            optional: true,
+        },
+        ikonaNotatki: {
+            type: "string",
+            label: "Ikona strony",
+            description: "Wybierz emoji jako ikonę strony notatki.",
+            options: EMOJI,
+            optional: true,
+            default: "🎙️",
+        },
+        wlasciwoscTagu: {
+            type: "string",
+            label: "Tag notatki",
+            description: 'Wybierz właściwość typu Select do tagowania notatki.',
+            async options() {
+                if (this.notion && this.databaseID) {
+                    try {
+                        const notion = new Client({
+                            auth: this.notion.$auth.oauth_access_token,
+                        });
+                                
+                        const database = await notion.databases.retrieve({
+                            database_id: this.databaseID,
+                        });
+                                
+                        const properties = database.properties;
+                        const selectProps = Object.keys(properties).filter(k => properties[k].type === "select");
+                        
+                        return selectProps.map(prop => ({ label: prop, value: prop }));
+                    } catch (error) {
+                        console.error("Błąd podczas pobierania właściwości tagów:", error);
+                        return [];
+                    }
+                }
+                return [];
+            },
+            optional: true,
+            reloadProps: true,
+        },
+        wartoscTagu: {
+            type: "string",
+            label: "Wartość tagu",
+            description: "Wybierz wartość dla tagu notatki. Domyślne opcje \"🎙️ Nagranie\" i \"📓 Dziennik\" automatycznie ustawią odpowiednie opcje podsumowania.",
+            async options() {
+                if (this.notion && this.databaseID && this.wlasciwoscTagu) {
+                    try {
+                        const notion = new Client({
+                            auth: this.notion.$auth.oauth_access_token,
+                        });
+                                
+                        const database = await notion.databases.retrieve({
+                            database_id: this.databaseID,
+                        });
+                                
+                        const properties = database.properties;
+                        
+                        // Sprawdzenie czy właściwość tagu istnieje
+                        if (properties[this.wlasciwoscTagu] && properties[this.wlasciwoscTagu].type === "select") {
+                            // Pobierz istniejące opcje z bazy danych
+                            const existingTagOptions = properties[this.wlasciwoscTagu].select.options.map(option => ({
+                                label: option.name,
+                                value: option.name,
+                            }));
+                                    
+                            // Domyślne opcje, które zawsze powinny być dostępne
+                            const defaultTagOptions = [
+                                { label: "🎙️ Nagranie", value: "🎙️ Nagranie" },
+                                { label: "📓 Dziennik", value: "📓 Dziennik" }
+                            ];
+                                    
+                            // Połącz istniejące opcje z domyślnymi, usuwając duplikaty
+                            const allTagOptions = [...existingTagOptions];
+                                    
+                            // Dodaj domyślne opcje, jeśli nie istnieją w bazie
+                            for (const defaultOption of defaultTagOptions) {
+                                if (!allTagOptions.some(option => option.value === defaultOption.value)) {
+                                    allTagOptions.push(defaultOption);
+                                }
+                            }
+                            
+                            return allTagOptions;
+                        }
+                    } catch (error) {
+                        console.error("Błąd podczas pobierania opcji tagów:", error);
+                    }
+                }
+                
+                // Jeśli nie można pobrać opcji, zwróć domyślne
+                return [
+                    { label: "🎙️ Nagranie", value: "🎙️ Nagranie" },
+                    { label: "📓 Dziennik", value: "📓 Dziennik" }
+                ];
+            },
+            default: "🎙️ Nagranie",
+            optional: true,
             reloadProps: true,
         },
         usluga_ai: {
@@ -155,262 +283,191 @@ export default {
             default: "OpenAI",
             reloadProps: true,
         },
-    },
-
-    async additionalProps() {
-        const props = {};
-        
-        // Próba odczytania zapisanych własnych poleceń
-        let savedCustomPrompts = [];
-       
-        // Opisy opcji podsumowania dla podpowiedzi użytkownika
-        const optionsDescriptions = {
-            "Podsumowanie": "Zwięzłe streszczenie całej zawartości transkrypcji (ok. 10-15% długości).",
-            "Główne punkty": "Lista najważniejszych tematów i kluczowych informacji z nagrania.",
-            "Elementy do wykonania": "Lista zadań i czynności do wykonania wspomnianych w nagraniu.",
-            "Pytania uzupełniające": "Lista pytań, które pojawiły się lub mogłyby się pojawić w kontekście tematów.",
-            "Historie": "Wyodrębnione opowieści, anegdoty i przykłady z nagrania.",
-            "Odniesienia": "Lista odwołań do zewnętrznych źródeł, osób, dzieł itp.",
-            "Argumenty": "Lista potencjalnych kontrargumentów do głównych tez z nagrania.",
-            "Powiązane tematy": "Lista tematów powiązanych, które mogą być interesujące do dalszej eksploracji.",
-            "Rozdziały": "Podział nagrania na logiczne sekcje z czasem rozpoczęcia/zakończenia.",
-            "Ogólny opis dnia": "Krótkie podsumowanie nastroju i charakteru opisanego dnia.",
-            "Kluczowe wydarzenia": "Lista najważniejszych zdarzeń wspomniana w dzienniku.",
-            "Osiągnięcia": "Lista sukcesów i ukończonych zadań wspomnianych w dzienniku.",
-            "Wyzwania": "Lista trudności i problemów napotkanych danego dnia.",
-            "Wnioski": "Kluczowe obserwacje i przemyślenia wynikające z zapisków.",
-            "Plan działania": "Konkretne kroki do podjęcia w przyszłości.",
-            "Rozwój osobisty": "Opis momentów rozwoju osobistego lub pozytywnego wpływu dnia.",
-            "Refleksja": "Krótkie podsumowanie wpływu dnia na życie i cele.",
-            "Ocena dnia (1-100)": "Liczba od 1 do 100 określająca ogólną ocenę dnia.",
-            "AI rekomendacje": "5 konkretnych, praktycznych rekomendacji na podstawie treści nagrania.",
-            "Źródła do przejrzenia": "Sugerowane książki, artykuły, kursy lub narzędzia związane z tematem."
-        };
-        
-        // Dodaj opisy dla własnych poleceń
-        savedCustomPrompts.forEach(prompt => {
-            optionsDescriptions[prompt] = `Własne polecenie: ${prompt}`;
-        });
-
-        // Jeśli mamy bazę danych Notion
-        if (this.notion && this.databaseID) {
-            try {
-                const notion = new Client({
-                    auth: this.notion.$auth.oauth_access_token,
-                });
-                        
-                const database = await notion.databases.retrieve({
-                    database_id: this.databaseID,
-                });
-                        
-                const properties = database.properties;
-                        
-                // Pobierz typy właściwości
-                const titleProps = Object.keys(properties).filter(k => properties[k].type === "title");
-                const numberProps = Object.keys(properties).filter(k => properties[k].type === "number");
-                const selectProps = Object.keys(properties).filter(k => properties[k].type === "select");
-                const dateProps = Object.keys(properties).filter(k => properties[k].type === "date");
-                const textProps = Object.keys(properties).filter(k => properties[k].type === "rich_text");
-                const urlProps = Object.keys(properties).filter(k => properties[k].type === "url");
-                const filesProps = Object.keys(properties).filter(k => properties[k].type === "files");
-                
-                // WŁAŚCIWOŚCI PODSTAWOWE
-                props.tytulNotatki = {
-                    type: "string",
-                    label: "Tytuł notatki (wymagane)",
-                    description: `Wybierz właściwość tytułu dla notatek. Domyślnie nazywa się **Name**.`,
-                    options: titleProps.map(prop => ({ label: prop, value: prop })),
-                    optional: false,
-                    reloadProps: true,
-                };
-                        
-                if (this.tytulNotatki) {
-                    props.wartoscTytulu = {
-                        type: "string",
-                        label: "Wartość tytułu",
-                        description: 'Wybierz wartość dla tytułu notatki.',
-                        options: [
-                            "Tytuł AI",
-                            "Nazwa pliku",
-                            'Oba ("Nazwa pliku – Tytuł AI")',
-                        ],
-                        default: "Tytuł AI",
-                        optional: true,
-                    };
-                }
-
-                // USTAWIENIE TAGU - nawet przed inicjalizacją konfiguracji tagu
-                props.wlasciwoscTagu = {
-                    type: "string",
-                    label: "Tag notatki",
-                    description: 'Wybierz właściwość typu Select do tagowania notatki.',
-                    options: selectProps.map(prop => ({ label: prop, value: prop })),
-                    optional: true,
-                    reloadProps: true,
-                };
-                
-                // Jeśli wybrano tag notatki, pobierz wartości
-                if (this.wlasciwoscTagu) {
-                    // Pobierz istniejące opcje z bazy danych
-                    const existingTagOptions = properties[this.wlasciwoscTagu].select.options.map(option => ({
-                        label: option.name,
-                        value: option.name,
-                    }));
-                        
-                    // Domyślne opcje, które zawsze powinny być dostępne
-                    const defaultTagOptions = [
-                        { label: "🎙️ Nagranie", value: "🎙️ Nagranie" },
-                        { label: "📓 Dziennik", value: "📓 Dziennik" }
-                    ];
-                        
-                    // Połącz istniejące opcje z domyślnymi, usuwając duplikaty
-                    const allTagOptions = [...existingTagOptions];
-                        
-                    // Dodaj domyślne opcje, jeśli nie istnieją w bazie
-                    for (const defaultOption of defaultTagOptions) {
-                        if (!allTagOptions.some(option => option.value === defaultOption.value)) {
-                            allTagOptions.push(defaultOption);
-                        }
-                    }
+        wlasciwoscCzasu: {
+            type: "string",
+            label: "Czas trwania",
+            description: "Wybierz właściwość czasu trwania. Musi być typu Number.",
+            async options() {
+                if (this.notion && this.databaseID) {
+                    try {
+                        const notion = new Client({
+                            auth: this.notion.$auth.oauth_access_token,
+                        });
                                 
-                    props.wartoscTagu = {
-                        type: "string",
-                        label: "Wartość tagu",
-                        description: "Wybierz wartość dla tagu notatki. Domyślnie dostępne są opcje \"🎙️ Nagranie\" i \"📓 Dziennik\", które automatycznie ustawią odpowiednie opcje podsumowania.",
-                        options: allTagOptions,
-                        default: "🎙️ Nagranie",
-                        optional: true,
-                        reloadProps: true,
-                    };
+                        const database = await notion.databases.retrieve({
+                            database_id: this.databaseID,
+                        });
+                                
+                        const properties = database.properties;
+                        const numberProps = Object.keys(properties).filter(k => properties[k].type === "number");
+                        
+                        return numberProps.map(prop => ({ label: prop, value: prop }));
+                    } catch (error) {
+                        console.error("Błąd podczas pobierania właściwości liczb:", error);
+                        return [];
+                    }
                 }
+                return [];
+            },
+            optional: true,
+        },
+        wlasciwoscKosztu: {
+            type: "string",
+            label: "Koszt notatki",
+            description: "Wybierz właściwość kosztu. Musi być typu Number.",
+            async options() {
+                if (this.notion && this.databaseID) {
+                    try {
+                        const notion = new Client({
+                            auth: this.notion.$auth.oauth_access_token,
+                        });
+                                
+                        const database = await notion.databases.retrieve({
+                            database_id: this.databaseID,
+                        });
+                                
+                        const properties = database.properties;
+                        const numberProps = Object.keys(properties).filter(k => properties[k].type === "number");
                         
-                props.ikonaNotatki = {
-                    type: "string",
-                    label: "Ikona strony",
-                    description: "Wybierz emoji jako ikonę strony notatki.",
-                    options: EMOJI,
-                    optional: true,
-                    default: "🎙️",
-                };
-                
-                props.wlasciwoscCzasu = {
-                    type: "string",
-                    label: "Czas trwania",
-                    description: "Wybierz właściwość czasu trwania. Musi być typu Number.",
-                    options: numberProps.map(prop => ({ label: prop, value: prop })),
-                    optional: true,
-                };
-                        
-                props.wlasciwoscKosztu = {
-                    type: "string",
-                    label: "Koszt notatki",
-                    description: "Wybierz właściwość kosztu. Musi być typu Number.",
-                    options: numberProps.map(prop => ({ label: prop, value: prop })),
-                    optional: true,
-                };
-                        
-                props.wlasciwoscDaty = {
-                    type: "string",
-                    label: "Data notatki",
-                    description: "Wybierz właściwość daty dla notatki.",
-                    options: dateProps.map(prop => ({ label: prop, value: prop })),
-                    optional: true,
-                };
-                        
-                props.wlasciwoscLinkuPliku = {
-                    type: "string",
-                    label: "Link do pliku",
-                    description: "Wybierz właściwość URL dla linku do pliku.",
-                    options: urlProps.map(prop => ({ label: prop, value: prop })),
-                    optional: true,
-                };
-                
-                // Konta i modele AI w zależności od wybranej usługi
-                if (this.usluga_ai === "OpenAI") {
-                    props.openai = {
-                        type: "app",
-                        app: "openai",
-                        label: "Konto OpenAI",
-                        description: `**Ważne:** Jeśli korzystasz z darmowego kredytu próbnego OpenAI, Twój klucz API może mieć ograniczenia i nie obsłuży dłuższych plików.`,
-                    };
-                        
-                    // Statyczna lista modelów OpenAI
-                    props.model_chat = {
-                        type: "string",
-                        label: "Model ChatGPT",
-                        description: `Wybierz model. Domyślnie **gpt-3.5-turbo**.`,
-                        default: "gpt-3.5-turbo",
-                        options: [
-                            { label: "GPT-3.5 Turbo", value: "gpt-3.5-turbo" },
-                            { label: "GPT-4o", value: "gpt-4o" },
-                            { label: "GPT-4o Mini", value: "gpt-4o-mini" },
-                            { label: "GPT-4 Turbo", value: "gpt-4-turbo-preview" }
-                        ],
-                    };
-                } else if (this.usluga_ai === "Anthropic") {
-                    props.anthropic = {
-                        type: "app",
-                        app: "anthropic",
-                        label: "Konto Anthropic",
-                        description: "Musisz mieć ustawioną metodę płatności w Anthropic.",
-                    };
-                        
-                    props.model_anthropic = {
-                        type: "string",
-                        label: "Model Anthropic",
-                        description: "Wybierz model Anthropic. Domyślnie claude-3-5-haiku-20241022.",
-                        default: "claude-3-5-haiku-20241022",
-                        options: [
-                            "claude-3-5-haiku-20241022",
-                            "claude-3-5-sonnet-20241022",
-                            "claude-3-7-sonnet-20250219",
-                            "claude-3-sonnet-20240229",
-                            "claude-3-opus-20240229",
-                            "claude-3-haiku-20240307"
-                        ],
-                    };
+                        return numberProps.map(prop => ({ label: prop, value: prop }));
+                    } catch (error) {
+                        console.error("Błąd podczas pobierania właściwości liczb:", error);
+                        return [];
+                    }
                 }
-                
-                props.prompt_whisper = {
-                    type: "string",
-                    label: "Prompt Whisper (opcjonalnie)",
-                    description: `Możesz wpisać prompt, który pomoże modelowi transkrypcji. Domyślnie prompt to "Witaj, witaj na moim wykładzie.", co poprawia interpunkcję.`,
-                    optional: true,
-                };
+                return [];
+            },
+            optional: true,
+        },
+        wlasciwoscDaty: {
+            type: "string",
+            label: "Data notatki",
+            description: "Wybierz właściwość daty dla notatki.",
+            async options() {
+                if (this.notion && this.databaseID) {
+                    try {
+                        const notion = new Client({
+                            auth: this.notion.$auth.oauth_access_token,
+                        });
+                                
+                        const database = await notion.databases.retrieve({
+                            database_id: this.databaseID,
+                        });
+                                
+                        const properties = database.properties;
+                        const dateProps = Object.keys(properties).filter(k => properties[k].type === "date");
+                        
+                        return dateProps.map(prop => ({ label: prop, value: prop }));
+                    } catch (error) {
+                        console.error("Błąd podczas pobierania właściwości dat:", error);
+                        return [];
+                    }
+                }
+                return [];
+            },
+            optional: true,
+        },
+        wlasciwoscLinkuPliku: {
+            type: "string",
+            label: "Link do pliku",
+            description: "Wybierz właściwość URL dla linku do pliku.",
+            async options() {
+                if (this.notion && this.databaseID) {
+                    try {
+                        const notion = new Client({
+                            auth: this.notion.$auth.oauth_access_token,
+                        });
+                                
+                        const database = await notion.databases.retrieve({
+                            database_id: this.databaseID,
+                        });
+                                
+                        const properties = database.properties;
+                        const urlProps = Object.keys(properties).filter(k => properties[k].type === "url");
+                        
+                        return urlProps.map(prop => ({ label: prop, value: prop }));
+                    } catch (error) {
+                        console.error("Błąd podczas pobierania właściwości URL:", error);
+                        return [];
+                    }
+                }
+                return [];
+            },
+            optional: true,
+        },
+        opcje_meta: {
+            type: "string[]",
+            label: "Elementy strony",
+            description: `Wybierz elementy, które mają zostać dodane do strony Notion.`,
+            options: [
+                "Callout informacyjny",
+                "Spis treści",
+                "Dane (koszty)"
+            ],
+            default: ["Callout informacyjny", "Spis treści", "Dane (koszty)"],
+        },
+        prompt_whisper: {
+            type: "string",
+            label: "Prompt Whisper (opcjonalnie)",
+            description: `Możesz wpisać prompt, który pomoże modelowi transkrypcji. Domyślnie prompt to "Witaj, witaj na moim wykładzie.", co poprawia interpunkcję.`,
+            optional: true,
+        },
+        wlasne_polecenia_ai: {
+            type: "string",
+            label: "Własne polecenia dla AI (opcjonalnie)",
+            description: "Wprowadź własne polecenie dla modelu AI, np. 'Podaj 3 pomysły na...'. Wyniki zostaną dodane jako osobna sekcja.",
+            optional: true,
+        },
+        opcje_zaawansowane: {
+            type: "boolean",
+            label: "Opcje zaawansowane",
+            description: `Ustaw na **True**, aby włączyć opcje zaawansowane.`,
+            default: false,
+            optional: true,
+            reloadProps: true,
+        },
+        opcje_podsumowania: {
+            type: "string[]",
+            label: "Opcje podsumowania",
+            description: `Wybierz opcje do uwzględnienia w podsumowaniu. Każda opcja dodaje inny rodzaj analizy:
 
-                props.wlasne_polecenia_ai = {
-                    type: "string",
-                    label: "Własne polecenia dla AI (opcjonalnie)",
-                    description: "Wprowadź własne polecenie dla modelu AI, np. 'Podaj 3 pomysły na...'. Wyniki zostaną dodane jako osobna sekcja.",
-                    optional: true,
-                };
-                    
-                // Co ma znaleźć się na stronie
-                props.opcje_meta = {
-                    type: "string[]",
-                    label: "Elementy strony",
-                    description: `Wybierz elementy, które mają zostać dodane do strony Notion.`,
-                    options: [
-                        "Callout informacyjny",
-                        "Spis treści",
-                        "Dane (koszty)"
-                    ],
-                    default: ["Callout informacyjny", "Spis treści", "Dane (koszty)"],
-                };
+- **Podsumowanie**: Zwięzłe streszczenie całej zawartości transkrypcji (ok. 10-15% długości).
+- **Główne punkty**: Lista najważniejszych tematów i kluczowych informacji z nagrania.
+- **Elementy do wykonania**: Lista zadań i czynności do wykonania wspomnianych w nagraniu.
+- **Pytania uzupełniające**: Lista pytań, które pojawiły się lub mogłyby się pojawić w kontekście tematów.
+- **Historie**: Wyodrębnione opowieści, anegdoty i przykłady z nagrania.
+- **Odniesienia**: Lista odwołań do zewnętrznych źródeł, osób, dzieł itp.
+- **Argumenty**: Lista potencjalnych kontrargumentów do głównych tez z nagrania.
+- **Powiązane tematy**: Lista tematów powiązanych, które mogą być interesujące do dalszej eksploracji.
+- **Rozdziały**: Podział nagrania na logiczne sekcje z czasem rozpoczęcia/zakończenia.
+- **Ogólny opis dnia**: Krótkie podsumowanie nastroju i charakteru opisanego dnia.
+- **Kluczowe wydarzenia**: Lista najważniejszych zdarzeń wspomniana w dzienniku.
+- **Osiągnięcia**: Lista sukcesów i ukończonych zadań wspomnianych w dzienniku.
+- **Wyzwania**: Lista trudności i problemów napotkanych danego dnia.
+- **Wnioski**: Kluczowe obserwacje i przemyślenia wynikające z zapisków.
+- **Plan działania**: Konkretne kroki do podjęcia w przyszłości.
+- **Rozwój osobisty**: Opis momentów rozwoju osobistego lub pozytywnego wpływu dnia.
+- **Refleksja**: Krótkie podsumowanie wpływu dnia na życie i cele.
+- **Ocena dnia (1-100)**: Liczba od 1 do 100 określająca ogólną ocenę dnia.
+- **AI rekomendacje**: 5 konkretnych, praktycznych rekomendacji na podstawie treści nagrania.
+- **Źródła do przejrzenia**: Sugerowane książki, artykuły, kursy lub narzędzia związane z tematem.`,
+            options: function() {
+                // Funkcja zwracająca opcje w zależności od wartości tagu
+                let defaultOptions = ["Podsumowanie"];
                 
-                // OPCJE PODSUMOWANIA - ładowane tylko po włączeniu konfiguracji tagu
-                if (this.konfiguracja_tagu === true) {
-                    // Przygotowanie opcji podsumowania
-                    const allSummaryOptions = [
-                        "Podsumowanie",
-                        "Główne punkty",
-                        "Elementy do wykonania",
+                if (this.wartoscTagu === "🎙️ Nagranie") {
+                    defaultOptions = [
+                        "Podsumowanie", 
+                        "Główne punkty", 
+                        "Elementy do wykonania", 
                         "Pytania uzupełniające",
                         "Historie",
                         "Odniesienia",
-                        "Argumenty",
                         "Powiązane tematy",
-                        "Rozdziały",
+                        "Rozdziały"
+                    ];
+                } else if (this.wartoscTagu === "📓 Dziennik") {
+                    defaultOptions = [
                         "Ogólny opis dnia",
                         "Kluczowe wydarzenia",
                         "Osiągnięcia",
@@ -420,250 +477,1166 @@ export default {
                         "Rozwój osobisty",
                         "Refleksja",
                         "Ocena dnia (1-100)",
-                        "AI rekomendacje",
-                        "Źródła do przejrzenia",
-                        ...savedCustomPrompts
+                        "AI rekomendacje"
                     ];
-
-                    // Dodaj własne polecenie do opcji podsumowania, jeśli istnieje
-                    if (this.wlasne_polecenia_ai && this.wlasne_polecenia_ai.trim() !== "" && !allSummaryOptions.includes(this.wlasne_polecenia_ai)) {
-                        allSummaryOptions.push(this.wlasne_polecenia_ai);
-                    }
-
-                    // Tworzenie opisu z wyjaśnieniami dla każdej opcji
-                    const optionsDescriptionsText = allSummaryOptions
-                        .map(option => `- **${option}**: ${optionsDescriptions[option] || ""}`)
-                        .join("\n");
-                    
-                    // Ustawianie domyślnych opcji na podstawie wartości tagu
-                    let defaultSummaryOptions = ["Podsumowanie"]; // Domyślnie tylko podsumowanie
-                    
-                    if (this.wartoscTagu === "🎙️ Nagranie") {
-                        defaultSummaryOptions = [
-                            "Podsumowanie", 
-                            "Główne punkty", 
-                            "Elementy do wykonania", 
-                            "Pytania uzupełniające",
-                            "Historie",
-                            "Odniesienia",
-                            "Powiązane tematy",
-                            "Rozdziały"
-                        ];
-                    } else if (this.wartoscTagu === "📓 Dziennik") {
-                        defaultSummaryOptions = [
-                            "Ogólny opis dnia",
-                            "Kluczowe wydarzenia",
-                            "Osiągnięcia",
-                            "Wyzwania",
-                            "Wnioski",
-                            "Plan działania",
-                            "Rozwój osobisty",
-                            "Refleksja",
-                            "Ocena dnia (1-100)",
-                            "AI rekomendacje"
-                        ];
-                    }
-
-                    props.opcje_podsumowania = {
-                        type: "string[]",
-                        label: "Opcje podsumowania",
-                        description: `Wybierz opcje do uwzględnienia w podsumowaniu:
-
-${optionsDescriptionsText}`,
-                        options: allSummaryOptions,
-                        default: defaultSummaryOptions,
-                        optional: false,
-                    };
                 }
                 
-                // Opcje zaawansowane
-                props.opcje_zaawansowane = {
-                    type: "boolean",
-                    label: "Opcje zaawansowane",
-                    description: `Ustaw na **True**, aby włączyć opcje zaawansowane.`,
-                    default: false,
+                // Zawsze dostępne opcje
+                const allOptions = [
+                    "Podsumowanie",
+                    "Główne punkty",
+                    "Elementy do wykonania",
+                    "Pytania uzupełniające",
+                    "Historie",
+                    "Odniesienia",
+                    "Argumenty",
+                    "Powiązane tematy",
+                    "Rozdziały",
+                    "Ogólny opis dnia",
+                    "Kluczowe wydarzenia",
+                    "Osiągnięcia",
+                    "Wyzwania",
+                    "Wnioski",
+                    "Plan działania",
+                    "Rozwój osobisty",
+                    "Refleksja",
+                    "Ocena dnia (1-100)",
+                    "AI rekomendacje",
+                    "Źródła do przejrzenia"
+                ];
+                
+                // Dodaj własne polecenie do opcji
+                if (this.wlasne_polecenia_ai && this.wlasne_polecenia_ai.trim() !== "") {
+                    allOptions.push(this.wlasne_polecenia_ai.trim());
+                }
+                
+                return allOptions;
+            },
+            default: function() {
+                // Funkcja zwracająca domyślne opcje w zależności od wartości tagu
+                if (this.wartoscTagu === "🎙️ Nagranie") {
+                    return [
+                        "Podsumowanie", 
+                        "Główne punkty", 
+                        "Elementy do wykonania", 
+                        "Pytania uzupełniające",
+                        "Historie",
+                        "Odniesienia",
+                        "Powiązane tematy",
+                        "Rozdziały"
+                    ];
+                } else if (this.wartoscTagu === "📓 Dziennik") {
+                    return [
+                        "Ogólny opis dnia",
+                        "Kluczowe wydarzenia",
+                        "Osiągnięcia",
+                        "Wyzwania",
+                        "Wnioski",
+                        "Plan działania",
+                        "Rozwój osobisty",
+                        "Refleksja",
+                        "Ocena dnia (1-100)",
+                        "AI rekomendacje"
+                    ];
+                }
+                return ["Podsumowanie"];
+            },
+            optional: false,
+        },
+    },
+
+    async additionalProps() {
+        const props = {};
+        
+        // Konta i modele AI w zależności od wybranej usługi
+        if (this.usluga_ai === "OpenAI") {
+            props.openai = {
+                type: "app",
+                app: "openai",
+                label: "Konto OpenAI",
+                description: `**Ważne:** Jeśli korzystasz z darmowego kredytu próbnego OpenAI, Twój klucz API może mieć ograniczenia i nie obsłuży dłuższych plików.`,
+            };
+                
+            // Statyczna lista modelów OpenAI
+            props.model_chat = {
+                type: "string",
+                label: "Model ChatGPT",
+                description: `Wybierz model. Domyślnie **gpt-3.5-turbo**.`,
+                default: "gpt-3.5-turbo",
+                options: [
+                    { label: "GPT-3.5 Turbo", value: "gpt-3.5-turbo" },
+                    { label: "GPT-4o", value: "gpt-4o" },
+                    { label: "GPT-4o Mini", value: "gpt-4o-mini" },
+                    { label: "GPT-4 Turbo", value: "gpt-4-turbo-preview" }
+                ],
+            };
+        } else if (this.usluga_ai === "Anthropic") {
+            props.anthropic = {
+                type: "app",
+                app: "anthropic",
+                label: "Konto Anthropic",
+                description: "Musisz mieć ustawioną metodę płatności w Anthropic.",
+            };
+                
+            props.model_anthropic = {
+                type: "string",
+                label: "Model Anthropic",
+                description: "Wybierz model Anthropic. Domyślnie claude-3-5-haiku-20241022.",
+                default: "claude-3-5-haiku-20241022",
+                options: [
+                    "claude-3-5-haiku-20241022",
+                    "claude-3-5-sonnet-20241022",
+                    "claude-3-7-sonnet-20250219",
+                    "claude-3-sonnet-20240229",
+                    "claude-3-opus-20240229",
+                    "claude-3-haiku-20240307"
+                ],
+            };
+        }
+        
+        // Opcje zaawansowane
+        if (this.opcje_zaawansowane === true) {
+            // Dodawanie pliku do notatki
+            props.dodac_plik = {
+                type: "boolean",
+                label: "Dodać plik do notatki",
+                description: "Ustaw na **True**, aby dodać plik audio do właściwości plików w Notion.",
+                default: false,
+                reloadProps: true,
+            };
+                        
+            if (this.dodac_plik === true) {
+                props.wlasciwoscPliku = {
+                    type: "string",
+                    label: "Właściwość pliku",
+                    description: "Wybierz właściwość typu Files dla pliku audio.",
+                    async options() {
+                        if (this.notion && this.databaseID) {
+                            try {
+                                const notion = new Client({
+                                    auth: this.notion.$auth.oauth_access_token,
+                                });
+                                        
+                                const database = await notion.databases.retrieve({
+                                    database_id: this.databaseID,
+                                });
+                                        
+                                const properties = database.properties;
+                                const filesProps = Object.keys(properties).filter(k => properties[k].type === "files");
+                                
+                                return filesProps.map(prop => ({ label: prop, value: prop }));
+                            } catch (error) {
+                                console.error("Błąd podczas pobierania właściwości plików:", error);
+                                return [];
+                            }
+                        }
+                        return [];
+                    },
                     optional: true,
-                    reloadProps: true,
                 };
                         
-                if (this.opcje_zaawansowane === true) {
-                    // Dodawanie pliku do notatki
-                    props.dodac_plik = {
-                        type: "boolean",
-                        label: "Dodać plik do notatki",
-                        description: "Dodaj plik audio do właściwości plików w Notion.",
-                        default: false,
-                        reloadProps: true,
-                    };
-                                
-                    if (this.dodac_plik === true) {
-                        props.wlasciwoscPliku = {
-                            type: "string",
-                            label: "Właściwość pliku",
-                            description: "Wybierz właściwość typu Files dla pliku audio.",
-                            options: filesProps.map(prop => ({ label: prop, value: prop })),
-                            optional: true,
-                        };
-                                
-                        props.plan_notion = {
-                            type: "string",
-                            label: "Plan Notion",
-                            description: "Wybierz plan Notion (wpływa na maksymalny rozmiar pliku).",
-                            options: [
-                                "Darmowy (max 4.8MB)",
-                                "Płatny (max 1GB)"
-                            ],
-                            default: "Darmowy (max 4.8MB)",
-                        };
-                                
-                        // Nazwa pliku tylko jeśli dodajemy plik
-                        props.wlasciwoscNazwyPliku = {
-                            type: "string",
-                            label: "Nazwa pliku",
-                            description: "Wybierz właściwość tekstu dla nazwy pliku.",
-                            options: textProps.map(prop => ({ label: prop, value: prop })),
-                            optional: true,
-                        };
-                    }
-                                
-                    // Opcje języka
-                    props.jezyk_tytulu = {
-                        type: "string",
-                        label: "Język tytułu",
-                        description: "Wybierz język dla tytułu notatki.",
-                        options: lang.LANGUAGES.map((lang) => ({
-                            label: lang.label,
-                            value: lang.value,
-                        })),
-                        optional: true,
-                    };
-
-                    props.jezyk_transkrypcji = {
-                        type: "string",
-                        label: "Język transkrypcji (opcjonalnie)",
-                        description: `Wybierz język docelowy dla transkrypcji. Whisper spróbuje przetłumaczyć audio na ten język.
+                props.plan_notion = {
+                    type: "string",
+                    label: "Plan Notion",
+                    description: "Wybierz plan Notion (wpływa na maksymalny rozmiar pliku).",
+                    options: [
+                        "Darmowy (max 4.8MB)",
+                        "Płatny (max 1GB)"
+                    ],
+                    default: "Darmowy (max 4.8MB)",
+                };
+            }
                         
+            // Opcje języka
+            props.jezyk_tytulu = {
+                type: "string",
+                label: "Język tytułu",
+                description: "Wybierz język dla tytułu notatki.",
+                options: lang.LANGUAGES.map((lang) => ({
+                    label: lang.label,
+                    value: lang.value,
+                })),
+                optional: true,
+            };
+
+            props.jezyk_transkrypcji = {
+                type: "string",
+                label: "Język transkrypcji (opcjonalnie)",
+                description: `Wybierz język docelowy dla transkrypcji. Whisper spróbuje przetłumaczyć audio na ten język.
+                
 Jeśli nie znasz języka pliku, możesz zostawić to pole puste, a Whisper spróbuje wykryć język i zapisać transkrypcję w tym samym języku.`,
-                        optional: true,
-                        options: lang.LANGUAGES.map((lang) => ({
-                            label: lang.label,
-                            value: lang.value,
-                        })),
-                        reloadProps: true,
-                    };
-                                
-                    props.jezyk_podsumowania = {
-                        type: "string",
-                        label: "Język podsumowania",
-                        description: `Określ język dla treści podsumowania. Model AI spróbuje podsumować transkrypcję w wybranym języku.
+                optional: true,
+                options: lang.LANGUAGES.map((lang) => ({
+                    label: lang.label,
+                    value: lang.value,
+                })),
+                reloadProps: true,
+            };
                         
+            props.jezyk_podsumowania = {
+                type: "string",
+                label: "Język podsumowania",
+                description: `Określ język dla treści podsumowania. Model AI spróbuje podsumować transkrypcję w wybranym języku.
+                
 Jeśli zostawisz to pole puste, model AI użyje tego samego języka co transkrypcja.`,
-                        optional: true,
-                        options: lang.LANGUAGES.map((lang) => ({
-                            label: lang.label,
-                            value: lang.value,
-                        })),
-                        reloadProps: true,
-                    };
-                                
-                    // Dodaj opcje tłumaczenia tylko gdy wybrano język podsumowania
-                    if (this.jezyk_podsumowania) {
-                        props.przetlumacz_transkrypcje = {
-                            type: "string",
-                            label: "Dodaj tłumaczenie (transkrypcja)",
-                            description: `Wybierz opcję tłumaczenia transkrypcji na język wybrany w ustawieniu "Język podsumowania". Opcja będzie miała efekt tylko wtedy, gdy język transkrypcji różni się od języka podsumowania.
+                optional: true,
+                options: lang.LANGUAGES.map((lang) => ({
+                    label: lang.label,
+                    value: lang.value,
+                })),
+                reloadProps: true,
+            };
+                        
+            // Dodaj opcje tłumaczenia tylko gdy wybrano język podsumowania
+            if (this.jezyk_podsumowania) {
+                props.przetlumacz_transkrypcje = {
+                    type: "string",
+                    label: "Dodaj tłumaczenie (transkrypcja)",
+                    description: `Wybierz opcję tłumaczenia transkrypcji na język wybrany w ustawieniu "Język podsumowania". Opcja będzie miała efekt tylko wtedy, gdy język transkrypcji różni się od języka podsumowania.
 
-**Przetłumacz i zachowaj oryginał**: Doda oryginalną transkrypcję i tłumaczenie.
-**Przetłumacz tylko**: Doda tylko tłumaczenie transkrypcji.
-**Nie tłumacz**: Zostawi tylko oryginalną transkrypcję.
+Przetłumacz i zachowaj oryginał: Doda oryginalną transkrypcję i tłumaczenie.
+Przetłumacz tylko: Doda tylko tłumaczenie transkrypcji.
+Nie tłumacz: Zostawi tylko oryginalną transkrypcję.
 
 Tłumaczenie zwiększy koszt o około $0.003 za 1000 słów.`,
-                            optional: true,
-                            options: [
-                                "Przetłumacz i zachowaj oryginał",
-                                "Przetłumacz tylko",
-                                "Nie tłumacz"
-                            ],
-                            default: "Przetłumacz i zachowaj oryginał",
-                        };
-                    }
-                                
-                    // Parametry AI
-                    props.gestosc_podsumowania = {
-                        type: "integer",
-                        label: "Gęstość podsumowania",
-                        description: `Ustawia maksymalną liczbę tokenów dla każdego fragmentu transkrypcji, a tym samym maksymalną liczbę tokenów w promptach wysyłanych do modelu AI.
+                    optional: true,
+                    options: [
+                        "Przetłumacz i zachowaj oryginał",
+                        "Przetłumacz tylko",
+                        "Nie tłumacz"
+                    ],
+                    default: "Przetłumacz i zachowaj oryginał",
+                };
+            }
+                        
+            // Parametry AI
+            props.gestosc_podsumowania = {
+                type: "integer",
+                label: "Gęstość podsumowania",
+                description: `Ustawia maksymalną liczbę tokenów dla każdego fragmentu transkrypcji, a tym samym maksymalną liczbę tokenów w promptach wysyłanych do modelu AI.
 
 Mniejsza liczba spowoduje "gęstsze" podsumowanie, ponieważ ten sam prompt będzie stosowany do mniejszego fragmentu transkrypcji - stąd wykonanych zostanie więcej żądań, gdyż transkrypcja zostanie podzielona na więcej fragmentów.
 
 Umożliwi to obsługę dłuższych plików, ponieważ ten skrypt używa równoległych żądań, a model AI będzie potrzebował mniej czasu na przetworzenie chunka z mniejszą liczbą tokenów.`,
-                        min: 500,
-                        max: this.usluga_ai === "Anthropic" ? 50000 : 5000,
-                        default: 2750,
-                        optional: true,
-                    };
-                                
-                    props.szczegolowoc = {
-                        type: "string",
-                        label: "Szczegółowość",
-                        description: `Określa poziom szczegółowości podsumowania i list (które zostały aktywowane) dla każdego fragmentu transkrypcji.
+                min: 500,
+                max: this.usluga_ai === "Anthropic" ? 50000 : 5000,
+                default: 2750,
+                optional: true,
+            };
+                        
+            props.szczegolowoc = {
+                type: "string",
+                label: "Szczegółowość",
+                description: `Określa poziom szczegółowości podsumowania i list (które zostały aktywowane) dla każdego fragmentu transkrypcji.
 
 - **Wysoka** - Podsumowanie będzie stanowić 20-25% długości transkrypcji. Większość list będzie ograniczona do 5-10 elementów.
 - **Średnia** - Podsumowanie będzie stanowić 10-15% długości transkrypcji. Większość list będzie ograniczona do 3-5 elementów.
 - **Niska** - Podsumowanie będzie stanowić 5-10% długości transkrypcji. Większość list będzie ograniczona do 2-3 elementów.`,
-                        options: ["Niska", "Średnia", "Wysoka"],
-                        default: "Średnia",
-                    };
-                                
-                    props.temperatura = {
-                        type: "integer",
-                        label: "Temperatura",
-                        description: `Ustaw temperaturę dla modelu AI. Prawidłowe wartości to liczby całkowite od 0 do 10, które są dzielone przez 10, aby osiągnąć końcową wartość między 0 a 1.0.
+                options: ["Niska", "Średnia", "Wysoka"],
+                default: "Średnia",
+            };
+                        
+            props.temperatura = {
+                type: "integer",
+                label: "Temperatura",
+                description: `Ustaw temperaturę dla modelu AI. Prawidłowe wartości to liczby całkowite od 0 do 10, które są dzielone przez 10, aby osiągnąć końcową wartość między 0 a 1.0.
 
 Wyższe temperatury mogą skutkować bardziej "kreatywnym" wynikiem, ale zwiększają ryzyko, że wyjście nie będzie prawidłowym JSON.`,
-                        min: 0,
-                        max: 10,
-                        default: 2,
-                    };
-                                
-                    props.rozmiar_fragmentu = {
-                        type: "integer",
-                        label: "Rozmiar fragmentu (MB)",
-                        description: `Twój plik audio zostanie podzielony na fragmenty przed wysłaniem do transkrypcji. Jest to niezbędne, aby obsłużyć limit rozmiaru pliku.
+                min: 0,
+                max: 10,
+                default: 2,
+            };
+                        
+            props.rozmiar_fragmentu = {
+                type: "integer",
+                label: "Rozmiar fragmentu (MB)",
+                description: `Twój plik audio zostanie podzielony na fragmenty przed wysłaniem do transkrypcji. Jest to niezbędne, aby obsłużyć limit rozmiaru pliku.
 
 To ustawienie pozwala na zmniejszenie tych fragmentów - do wartości od 10MB do 50MB. Mniejszy rozmiar fragmentu może umożliwić obsługę dłuższych plików.`,
-                        min: 10,
-                        max: 50,
-                        default: 24,
-                    };
-                                
-                    props.wylacz_moderacje = {
-                        type: "boolean",
-                        label: "Wyłącz moderację",
-                        description: `Domyślnie ten workflow NIE będzie sprawdzał Twojej transkrypcji pod kątem nieodpowiednich treści za pomocą API Moderacji OpenAI. Jeśli chcesz włączyć to sprawdzanie, ustaw tę opcję na false.`,
-                        default: false,
-                    };
-                                
-                    props.przerwij_bez_czasu = {
-                        type: "boolean",
-                        label: "Przerwij bez czasu",
-                        description: "Przerywa, jeśli czas trwania nie może być określony.",
-                        default: false,
-                    };
-                }
-            } catch (error) {
-                console.error("Błąd podczas pobierania właściwości bazy danych Notion:", error);
-            }
+                min: 10,
+                max: 50,
+                default: 24,
+            };
+                        
+            props.wylacz_moderacje = {
+                type: "boolean",
+                label: "Wyłącz moderację",
+                description: `Domyślnie ten workflow NIE będzie sprawdzał Twojej transkrypcji pod kątem nieodpowiednich treści za pomocą API Moderacji OpenAI. Jeśli chcesz włączyć to sprawdzanie, ustaw tę opcję na false.`,
+                default: false,
+            };
+                        
+            props.przerwij_bez_czasu = {
+                type: "boolean",
+                label: "Przerwij bez czasu",
+                description: "Przerywa, jeśli czas trwania nie może być określony.",
+                default: false,
+            };
         }
-                
+
         return props;
-    },    
+    },
+
     methods: {
-        ...common.methods,
-        ...translation.methods, // Importujemy metody tłumaczenia
+        // Poprawiona funkcja dla wykrywania języka bez używania metod z translate-transcript.mjs
+        async detectLanguage(text, llm, service, model) {
+            console.log("Wykrywanie języka transkrypcji...");
+            
+            try {
+                let response;
+                const systemPrompt = "Detect the language of the prompt, then return a valid JSON object containing the language name and language code of the text. Example: {\"label\": \"English\", \"value\": \"en\"}";
+                
+                if (service === "OpenAI") {
+                    response = await llm.chat.completions.create({
+                        model: model || "gpt-3.5-turbo",
+                        messages: [
+                            {
+                                role: "system",
+                                content: systemPrompt
+                            },
+                            {
+                                role: "user",
+                                content: text
+                            }
+                        ],
+                        temperature: 0.2,
+                    });
+                    
+                    return this.formatDetectedLanguage(response.choices[0].message.content);
+                } else if (service === "Anthropic") {
+                    response = await llm.messages.create({
+                        model: model || "claude-3-5-haiku-20241022",
+                        max_tokens: 100,
+                        messages: [
+                            {
+                                role: "user",
+                                content: text
+                            }
+                        ],
+                        system: systemPrompt,
+                        temperature: 0.2,
+                    });
+                    
+                    return this.formatDetectedLanguage(response.content[0].text);
+                }
+                
+                throw new Error("Nieznana usługa AI");
+            } catch (error) {
+                console.error(`Błąd wykrywania języka: ${error.message}`);
+                
+                // Zwróć domyślny język polski, jeśli wykrywanie nie zadziała
+                return {
+                    label: "Polish",
+                    value: "pl"
+                };
+            }
+        },
         
-        // Własna implementacja funkcji repairJSON - poprawiona obsługa pustych odpowiedzi
-        repairJSON(input) {
+        // Pomocnicza funkcja do formatowania wykrytego języka
+        formatDetectedLanguage(content) {
+            try {
+                if (typeof content !== 'string' || content.trim() === '') {
+                    throw new Error("Pusta odpowiedź");
+                }
+                
+                // Próba konwersji odpowiedzi na JSON
+                let result = JSON.parse(content);
+                
+                // Sprawdź czy odpowiedź ma wymagane pola
+                if (!result.label || !result.value) {
+                    throw new Error("Brak wymaganych pól");
+                }
+                
+                return result;
+            } catch (error) {
+                console.log(`Błąd formatowania wykrytego języka: ${error.message}`);
+                console.log("Odpowiedź:", content);
+                
+                // Spróbuj znaleźć coś co wygląda na obiekt JSON w tekście
+                let match = content.match(/\{[^{}]*\}/);
+                if (match) {
+                    try {
+                        let result = JSON.parse(match[0]);
+                        if (result.label && result.value) {
+                            return result;
+                        }
+                    } catch {}
+                }
+                
+                // Jako ostateczność, zwróć domyślny język polski
+                return {
+                    label: "Polish",
+                    value: "pl"
+                };
+            }
+        },
+        
+        // Poprawiona funkcja tłumaczenia uwzględniająca problemy z wykrywaniem języka
+        async translateParagraphs(
+            llm,
+            service,
+            model,
+            stringsArray,
+            targetLanguage,
+            temperature = 0.2,
+            maxConcurrent = 35
+        ) {
+            try {
+                const limiter = new Bottleneck({
+                    maxConcurrent: maxConcurrent,
+                });
+
+                console.log(
+                    `Wysyłam ${stringsArray.length} paragrafów do tłumaczenia...`
+                );
+                
+                const results = await limiter.schedule(() => {
+                    const tasks = stringsArray.map((arr, index) => {
+                        const systemMessage = `Translate the text into ${targetLanguage.label} (ISO 639-1 code: ${targetLanguage.value}).`;
+
+                        // Używamy modyfikowanej wersji metody 'chat'
+                        return this.translateSingleChunk(
+                            llm,
+                            service,
+                            model,
+                            arr,
+                            systemMessage,
+                            temperature,
+                            index
+                        );
+                    });
+                    return Promise.all(tasks);
+                });
+
+                const translationResult = {
+                    paragraphs: results.map(
+                        (result) => result.choices[0].message.content
+                    ),
+                    language: targetLanguage.label,
+                    languageCode: targetLanguage.value,
+                    usage: {
+                        prompt_tokens: results.reduce(
+                            (total, item) => total + item.usage.prompt_tokens,
+                            0
+                        ),
+                        completion_tokens: results.reduce(
+                            (total, item) => total + item.usage.completion_tokens,
+                            0
+                        ),
+                    },
+                    model: results[0].model,
+                };
+
+                console.log(
+                    `Przetłumaczono ${stringsArray.length} paragrafów.`
+                );
+                return translationResult;
+            } catch (error) {
+                console.error(error);
+
+                throw new Error(
+                    `Błąd tłumaczenia: ${error.message}`
+                );
+            }
+        },
+        
+        // Pomocnicza funkcja do tłumaczenia pojedynczego fragmentu
+        async translateSingleChunk(
+            llm,
+            service,
+            model,
+            content,
+            systemMessage,
+            temperature,
+            index
+        ) {
+            return await retry(
+                async (bail, attempt) => {
+                    console.log(`Próba ${attempt}: Tłumaczenie fragmentu ${index}...`);
+
+                    let response;
+                    if (service === "OpenAI") {
+                        response = await llm.chat.completions.create({
+                            model: model,
+                            messages: [
+                                {
+                                    role: "system",
+                                    content: systemMessage,
+                                },
+                                {
+                                    role: "user",
+                                    content: content,
+                                },
+                            ],
+                            temperature: temperature / 10,
+                        }, {
+                            maxRetries: 3,
+                        });
+                    } else if (service === "Anthropic") {
+                        response = await llm.messages.create({
+                            model: model,
+                            max_tokens: 4096,
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: content,
+                                },
+                            ],
+                            system: systemMessage,
+                            temperature: temperature / 10,
+                        }, {
+                            maxRetries: 3,
+                        });
+                        
+                        // Konwersja odpowiedzi Anthropic do formatu OpenAI dla spójności
+                        response = {
+                            id: response.id,
+                            model: response.model,
+                            choices: [
+                                {
+                                    index: 0,
+                                    message: {
+                                        role: "assistant",
+                                        content: response.content[0].text,
+                                    },
+                                },
+                            ],
+                            usage: {
+                                prompt_tokens: response.usage.input_tokens,
+                                completion_tokens: response.usage.output_tokens,
+                                total_tokens: response.usage.input_tokens + response.usage.output_tokens,
+                            },
+                        };
+                    }
+
+                    console.log(`Fragment ${index} przetłumaczony.`);
+                    return response;
+                },
+                {
+                    retries: 3,
+                    onRetry: (error, attempt) => {
+                        console.error(`Próba ${attempt} tłumaczenia nie powiodła się: ${error.message}. Ponawiam...`);
+                    },
+                }
+            );
+        },
+        
+        // Modyfikacja funkcji createNotionPage, aby dodać poprawny callout
+        async createNotionPage(
+            steps,
+            notion,
+            duration,
+            formatted_chat,
+            paragraphs,
+            cost,
+            language
+        ) {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, "0");
+            const day = String(today.getDate()).padStart(2, "0");
+            const date = `${year}-${month}-${day}`;
+
+            const meta = formatted_chat;
+
+            // Utworzenie tytułu na podstawie ustawień
+            const AI_generated_title = formatted_chat.title;
+            let noteTitle = "";
+            
+            if (this.wartoscTytulu == 'Oba ("Nazwa pliku – Tytuł AI")') {
+                noteTitle = `${config.fileName} – ${AI_generated_title}`;
+            } else if (this.wartoscTytulu == "Nazwa pliku") {
+                noteTitle = config.fileName;
+            } else {
+                noteTitle = AI_generated_title;
+            }
+            
+            meta.title = noteTitle.charAt(0).toUpperCase() + noteTitle.slice(1);
+
+            // Przygotowanie danych
+            meta.transcript = paragraphs.transcript;
+            if (paragraphs.summary && paragraphs.summary.length > 0) {
+                meta.long_summary = paragraphs.summary;
+            }
+            if (paragraphs.translated_transcript && paragraphs.translated_transcript.length > 0) {
+                meta.translated_transcript = paragraphs.translated_transcript;
+            }
+
+            // Dane kosztów
+            meta["transcription-cost"] = `Koszt transkrypcji: $${cost.transcript.toFixed(3)}`;
+            meta["chat-cost"] = `Koszt AI: $${cost.summary.toFixed(3)}`;
+            const totalCostArray = [cost.transcript, cost.summary];
+            
+            if (cost.language_check) {
+                meta["language-check-cost"] = `Koszt sprawdzania języka: $${cost.language_check.toFixed(3)}`;
+                totalCostArray.push(cost.language_check);
+            }
+            
+            if (cost.translated_transcript) {
+                meta["translation-cost"] = `Koszt tłumaczenia: $${cost.translated_transcript.toFixed(3)}`;
+                totalCostArray.push(cost.translated_transcript);
+            }
+            
+            const totalCost = totalCostArray.reduce((a, b) => a + b, 0);
+            meta["total-cost"] = `Całkowity koszt: $${totalCost.toFixed(3)}`;
+
+            // Usunięcie pustych elementów
+            Object.keys(meta).forEach((key) => {
+                if (Array.isArray(meta[key])) {
+                    meta[key] = meta[key].filter(Boolean);
+                }
+            });
+
+            // Przygotowanie obiektu strony Notion
+            const data = {
+                parent: {
+                    type: "database_id",
+                    database_id: this.databaseID,
+                },
+                icon: {
+                    type: "emoji",
+                    emoji: this.ikonaNotatki,
+                },
+                properties: {
+                    [this.tytulNotatki]: {
+                        title: [{ text: { content: meta.title } }],
+                    },
+                    ...(this.wlasciwoscTagu && {
+                        [this.wlasciwoscTagu]: {
+                            select: { name: this.wartoscTagu || "🎙️ Nagranie" },
+                        },
+                    }),
+                    ...(this.wlasciwoscCzasu && {
+                        [this.wlasciwoscCzasu]: {
+                             number: duration,
+                        },
+                    }),
+                    ...(this.wlasciwoscKosztu && {
+                        [this.wlasciwoscKosztu]: {
+                             number: totalCost,
+                        },
+                    }),
+                    ...(this.wlasciwoscDaty && {
+                        [this.wlasciwoscDaty]: {
+                            date: { start: date },
+                        },
+                    }),
+                    ...(this.wlasciwoscLinkuPliku && {
+                        [this.wlasciwoscLinkuPliku]: {
+                            url: config.fileLink,
+                        },
+                    }),
+                },
+                children: [],
+            };
+            
+            // Dodaj callout informacyjny, jeśli wybrano
+            if (this.opcje_meta.includes("Callout informacyjny")) {
+                data.children.push({
+                    callout: {
+                        rich_text: [
+                            { text: { content: "Ta transkrypcja AI została utworzona " } },
+                            { 
+                                mention: { 
+                                    type: "date", 
+                                    date: { start: date } 
+                                } 
+                            },
+                            { text: { content: ". " } },
+                            {
+                                text: {
+                                    content: "Posłuchaj oryginalnego nagrania tutaj.",
+                                    link: { url: config.fileLink },
+                                },
+                            },
+                        ],
+                        icon: { emoji: this.ikonaNotatki },
+                        color: "blue_background",
+                    },
+                });
+            }
+
+            // Dodaj spis treści, jeśli wybrano
+            if (this.opcje_meta.includes("Spis treści")) {
+                data.children.push({
+                    table_of_contents: { color: "default" },
+                });
+            }
+
+            const responseHolder = {};
+
+            // Przygotowanie sekcji podsumowania
+            if (this.opcje_podsumowania.includes("Podsumowanie") && meta.summary) {
+                responseHolder.summary_header = "Podsumowanie";
+                const summaryHolder = [];
+                const summaryBlockMaxLength = 80;
+                
+                // Podsumowanie może być w różnych polach zależnie od wybranego podsumowania
+                const summaryText = meta.summary || meta.day_overview || "";
+                
+                if (summaryText) {
+                    const summaryParagraphs = this.makeParagraphs(summaryText, 1200);
+                    
+                    for (let i = 0; i < summaryParagraphs.length; i += summaryBlockMaxLength) {
+                        summaryHolder.push(summaryParagraphs.slice(i, i + summaryBlockMaxLength));
+                    }
+                    responseHolder.summary = summaryHolder;
+                }
+            }
+
+            // Przygotowanie nagłówka transkrypcji
+            let transcriptHeaderValue;
+            if (
+                language &&
+                language.transcript &&
+                language.summary &&
+                language.transcript.value !== language.summary.value
+            ) {
+                transcriptHeaderValue = `Transkrypcja (${language.transcript.label})`;
+            } else {
+                transcriptHeaderValue = "Transkrypcja";
+            }
+
+            responseHolder.transcript_header = transcriptHeaderValue;
+
+            // Przygotowanie transkrypcji
+            const transcriptHolder = [];
+            const transcriptBlockMaxLength = 80;
+
+            for (let i = 0; i < meta.transcript.length; i += transcriptBlockMaxLength) {
+                const chunk = meta.transcript.slice(i, i + transcriptBlockMaxLength);
+                transcriptHolder.push(chunk);
+            }
+
+            responseHolder.transcript = transcriptHolder;
+
+            // Przygotowanie tłumaczenia transkrypcji, jeśli istnieje
+            if (paragraphs.translated_transcript && paragraphs.translated_transcript.length > 0) {
+                const translationHeader = `Przetłumaczona transkrypcja (${language.summary.label})`;
+
+                responseHolder.translation_header = translationHeader;
+
+                const translationHolder = [];
+                const translationBlockMaxLength = 80;
+
+                for (let i = 0; i < paragraphs.translated_transcript.length; i += translationBlockMaxLength) {
+                    const chunk = paragraphs.translated_transcript.slice(i, i + translationBlockMaxLength);
+                    translationHolder.push(chunk);
+                }
+
+                responseHolder.translation = translationHolder;
+            }
+
+            // Przygotowanie dodatkowych sekcji
+            const additionalInfoArray = [];
+
+            // Nagłówek "Dodatkowe informacje"
+            additionalInfoArray.push({
+                heading_1: {
+                    rich_text: [
+                        {
+                            text: {
+                                content: "Dodatkowe informacje",
+                            },
+                        },
+                    ],
+                },
+            });
+
+            // Funkcja do dodawania sekcji informacyjnych
+            function additionalInfoHandler(arr, header, itemType) {
+                if (!arr || arr.length === 0) return;
+
+                // Nagłówek sekcji - pierwsza litera wielka, reszta mała
+                const formattedHeader = header.charAt(0).toUpperCase() + header.slice(1).toLowerCase();
+                
+                const infoHeader = {
+                    heading_2: {
+                        rich_text: [
+                            {
+                                text: {
+                                    content: formattedHeader,
+                                },
+                            },
+                        ],
+                    },
+                };
+
+                additionalInfoArray.push(infoHeader);
+
+                // Dodanie callout z ostrzeżeniem dla sekcji "Argumenty"
+                if (header === "Argumenty i obszary do poprawy") {
+                    const argWarning = {
+                        callout: {
+                            rich_text: [
+                                {
+                                    text: {
+                                        content: "To potencjalne argumenty przeciwne. Tak jak każda inna część tego podsumowania, dokładność nie jest gwarantowana.",
+                                    },
+                                },
+                            ],
+                            icon: {
+                                emoji: "⚠️",
+                            },
+                            color: "orange_background",
+                        },
+                    };
+
+                    additionalInfoArray.push(argWarning);
+                }
+
+                // Dodanie elementów listy
+                for (let item of arr) {
+                    // Jeśli element jest obiektem (np. dla rozdziałów), przetwórz go odpowiednio
+                    if (typeof item === 'object' && item !== null) {
+                        let content = "";
+                        if (item.title) {
+                            content += item.title;
+                            if (item.start_time || item.end_time) {
+                                content += ` (${item.start_time || "00:00"} - ${item.end_time || "koniec"})`;
+                            }
+                        } else {
+                            content = JSON.stringify(item);
+                        }
+                        
+                        const infoItem = {
+                            [itemType]: {
+                                rich_text: [
+                                    {
+                                        text: {
+                                            content: content,
+                                        },
+                                    },
+                                ],
+                            },
+                        };
+                        
+                        additionalInfoArray.push(infoItem);
+                    } 
+                    // Specjalne formatowanie dla źródeł do przejrzenia - dodanie linków
+                    else if (header === "Źródła do przejrzenia") {
+                        // Próba wydobycia potencjalnego tytułu i opisu
+                        const titleMatch = item.match(/^(.*?)(?:\s*\(|:\s*)/);
+                        const title = titleMatch ? titleMatch[1].trim() : item;
+                        
+                        // Tworzenie elementu listy z odpowiednim formatowaniem
+                        const infoItem = {
+                            [itemType]: {
+                                rich_text: [
+                                    {
+                                        text: {
+                                            content: title,
+                                            link: { url: "#" }, // Domyślny link
+                                        },
+                                    },
+                                    {
+                                        text: {
+                                            content: item.replace(title, ""),
+                                        },
+                                    },
+                                ],
+                            },
+                        };
+                        
+                        additionalInfoArray.push(infoItem);
+                    }
+                    // Standardowa obsługa dla elementów tekstowych
+                    else {
+                        const infoItem = {
+                            [itemType]: {
+                                rich_text: [
+                                    {
+                                        text: {
+                                            content: item,
+                                        },
+                                    },
+                                ],
+                            },
+                        };
+
+                        additionalInfoArray.push(infoItem);
+                    }
+                }
+            }
+
+            // Dodanie wszystkich sekcji, które zostały wybrane w opcjach podsumowania
+            if (this.opcje_podsumowania.includes("Główne punkty") && meta.main_points) {
+                additionalInfoHandler(meta.main_points, "Główne punkty", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Elementy do wykonania") && meta.action_items) {
+                additionalInfoHandler(meta.action_items, "Elementy do wykonania", "to_do");
+            }
+            
+            if (this.opcje_podsumowania.includes("Pytania uzupełniające") && meta.follow_up) {
+                additionalInfoHandler(meta.follow_up, "Pytania uzupełniające", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Historie") && meta.stories) {
+                additionalInfoHandler(meta.stories, "Historie i przykłady", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Odniesienia") && meta.references) {
+                additionalInfoHandler(meta.references, "Odniesienia i cytaty", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Argumenty") && meta.arguments) {
+                additionalInfoHandler(meta.arguments, "Argumenty i obszary do poprawy", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Powiązane tematy") && meta.related_topics) {
+                additionalInfoHandler(meta.related_topics, "Powiązane tematy", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Rozdziały") && meta.chapters) {
+                additionalInfoHandler(meta.chapters, "Rozdziały", "bulleted_list_item");
+            }
+            
+            // Opcje dziennika
+            if (this.opcje_podsumowania.includes("Kluczowe wydarzenia") && meta.key_events) {
+                additionalInfoHandler(meta.key_events, "Kluczowe wydarzenia", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Osiągnięcia") && meta.achievements) {
+                additionalInfoHandler(meta.achievements, "Osiągnięcia", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Wyzwania") && meta.challenges) {
+                additionalInfoHandler(meta.challenges, "Wyzwania", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Wnioski") && meta.insights) {
+                additionalInfoHandler(meta.insights, "Wnioski", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Plan działania") && meta.action_plan) {
+                additionalInfoHandler(meta.action_plan, "Plan działania", "to_do");
+            }
+            
+            if (this.opcje_podsumowania.includes("Rozwój osobisty") && meta.personal_growth) {
+                additionalInfoHandler([meta.personal_growth], "Rozwój osobisty", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Refleksja") && meta.reflection) {
+                additionalInfoHandler([meta.reflection], "Refleksja", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Ocena dnia (1-100)") && meta.day_rating) {
+                additionalInfoHandler([`Ocena dnia: ${meta.day_rating}/100`], "Ocena dnia", "bulleted_list_item");
+            }
+            
+            // Wspólne opcje
+            if (this.opcje_podsumowania.includes("AI rekomendacje") && meta.ai_recommendations) {
+                additionalInfoHandler(meta.ai_recommendations, "Rekomendacje AI", "bulleted_list_item");
+            }
+            
+            if (this.opcje_podsumowania.includes("Źródła do przejrzenia") && meta.resources_to_check) {
+                additionalInfoHandler(meta.resources_to_check, "Źródła do przejrzenia", "bulleted_list_item");
+            }
+            
+            // Własne polecenia
+            if (this.wlasne_polecenia_ai && 
+                this.opcje_podsumowania.includes(this.wlasne_polecenia_ai) && 
+                meta.custom_instructions) {
+                additionalInfoHandler(meta.custom_instructions, this.wlasne_polecenia_ai, "bulleted_list_item");
+            }
+
+            // Dodanie sekcji Meta, jeśli wybrano
+            if (this.opcje_meta.includes("Dane (koszty)")) {
+                const metaArray = [meta["transcription-cost"], meta["chat-cost"]];
+
+                if (meta["language-check-cost"]) {
+                    metaArray.push(meta["language-check-cost"]);
+                }
+
+                if (meta["translation-cost"]) {
+                    metaArray.push(meta["translation-cost"]);
+                }
+
+                metaArray.push(meta["total-cost"]);
+                additionalInfoHandler(metaArray, "Dane", "bulleted_list_item");
+            }
+
+            responseHolder.additional_info = additionalInfoArray;
+
+            // Tworzenie strony w Notion
+            let response;
+            try {
+                await retry(
+                    async (bail) => {
+                        try {
+                            console.log(`Tworzę stronę w Notion...`);
+                            response = await notion.pages.create(data);
+                        } catch (error) {
+                            if (400 <= error.status && error.status <= 409) {
+                                console.log("Błąd tworzenia strony Notion:", error);
+                                bail(error);
+                            } else {
+                                console.log("Błąd tworzenia strony Notion:", error);
+                                throw error;
+                            }
+                        }
+                    },
+                    {
+                        retries: 3,
+                        onRetry: (error) => console.log("Ponawiam tworzenie strony:", error),
+                    }
+                );
+            } catch (error) {
+                throw new Error("Nie udało się utworzyć strony w Notion.");
+            }
+
+            responseHolder.response = response;
+            return responseHolder;
+        },
+        
+async updateNotionPage(notion, page) {
+            console.log(`Aktualizuję stronę Notion z pozostałymi informacjami...`);
+
+            const limiter = new Bottleneck({
+                maxConcurrent: 1,
+                minTime: 300,
+            });
+
+            const pageID = page.response.id.replace(/-/g, "");
+            const allAPIResponses = {};
+
+            // Dodawanie podsumowania
+            if (page.summary) {
+                const summaryAdditionResponses = await Promise.all(
+                    page.summary.map((summary, index) =>
+                        limiter.schedule(() => this.sendTranscripttoNotion(
+                            notion, summary, pageID, index, page.summary_header, "podsumowanie"
+                        ))
+                    )
+                );
+                allAPIResponses.summary_responses = summaryAdditionResponses;
+            }
+
+            // Dodawanie tłumaczenia
+            if (page.translation) {
+                const translationAdditionResponses = await Promise.all(
+                    page.translation.map((translation, index) =>
+                        limiter.schedule(() => this.sendTranscripttoNotion(
+                            notion, translation, pageID, index, page.translation_header, "tłumaczenie"
+                        ))
+                    )
+                );
+                allAPIResponses.translation_responses = translationAdditionResponses;
+            }
+
+            // Dodawanie transkrypcji, jeśli nie ma tłumaczenia lub ustawiono zachowanie oryginału
+            if (!this.przetlumacz_transkrypcje ||
+                this.przetlumacz_transkrypcje.includes("zachowaj oryginał") ||
+                this.przetlumacz_transkrypcje.includes("Nie tłumacz") ||
+                !page.translation) {
+                const transcriptAdditionResponses = await Promise.all(
+                    page.transcript.map((transcript, index) =>
+                        limiter.schedule(() => this.sendTranscripttoNotion(
+                            notion, transcript, pageID, index, page.transcript_header, "transkrypcja"
+                        ))
+                    )
+                );
+                allAPIResponses.transcript_responses = transcriptAdditionResponses;
+            }
+
+            // Dodawanie dodatkowych informacji
+            if (page.additional_info?.length > 0) {
+                const additionalInfo = page.additional_info;
+                const infoHolder = [];
+                const infoBlockMaxLength = 95;
+
+                for (let i = 0; i < additionalInfo.length; i += infoBlockMaxLength) {
+                    infoHolder.push(additionalInfo.slice(i, i + infoBlockMaxLength));
+                }
+
+                const additionalInfoAdditionResponses = await Promise.all(
+                    infoHolder.map((info) =>
+                        limiter.schedule(() => this.sendAdditionalInfotoNotion(notion, info, pageID))
+                    )
+                );
+
+                allAPIResponses.additional_info_responses = additionalInfoAdditionResponses;
+            }
+
+            return allAPIResponses;
+        },
+        
+        async sendTranscripttoNotion(
+            notion,
+            transcript,
+            pageID,
+            index,
+            title,
+            logValue
+        ) {
+            return retry(
+                async (bail, attempt) => {
+                    const data = {
+                        block_id: pageID,
+                        children: [],
+                    };
+
+                    if (index === 0) {
+                        data.children.push({
+                            heading_1: {
+                                rich_text: [{ text: { content: title } }],
+                            },
+                        });
+                    }
+
+                    for (let sentence of transcript) {
+                        data.children.push({
+                            paragraph: {
+                                rich_text: [{ text: { content: sentence } }],
+                            },
+                        });
+                    }
+
+                    console.log(`Próba ${attempt}: Wysyłam ${logValue} fragment ${index} do Notion...`);
+                    return await notion.blocks.children.append(data);
+                },
+                {
+                    retries: 3,
+                    onRetry: (error, attempt) => console.log(
+                        `Ponawiam dodawanie ${logValue} (próba ${attempt}):`, error
+                    ),
+                }
+            );
+        },
+        
+        async sendAdditionalInfotoNotion(notion, additionalInfo, pageID) {
+            return retry(
+                async (bail, attempt) => {
+                    const data = {
+                        block_id: pageID,
+                        children: additionalInfo,
+                    };
+
+                    console.log(`Próba ${attempt}: Wysyłam dodatkowe informacje do Notion...`);
+                    return await notion.blocks.children.append(data);
+                },
+                {
+                    retries: 3,
+                    onRetry: (error, attempt) => console.log(
+                        `Ponawiam dodawanie informacji (próba ${attempt}):`, error
+                    ),
+                }
+            );
+        },
+        
+        async cleanTmp(cleanChunks = true) {
+            console.log(`Czyszczę katalog /tmp/...`);
+
+            if (config.filePath && fs.existsSync(config.filePath)) {
+                await fs.promises.unlink(config.filePath);
+            }
+
+            if (cleanChunks && config.chunkDir.length > 0 && fs.existsSync(config.chunkDir)) {
+                await execAsync(`rm -rf "${config.chunkDir}"`);
+            }
+        },
+        
+        async repairJSON(input) {
             console.log("Typ danych wejściowych:", typeof input);
             
             if (!input || input.trim() === "") {
@@ -1454,14 +2427,8 @@ To ustawienie pozwala na zmniejszenie tych fragmentów - do wartości od 10MB do
             }
             
             if (summary_options.includes("Źródła do przejrzenia")) {
-                prompt.resources_to_check = `Klucz "resources_to_check:" - dodaj tablicę z 3-5 konkretnymi źródłami (książki, artykuły, kursy, narzędzia), które mogą być przydatne w kontekście tematów z transkrypcji. Dla każdego źródła podaj krótki opis (20-30 słów) i ewentualnie link lub autora.`;
+                prompt.resources_to_check = `Klucz "resources_to_check:" - dodaj tablicę z 3-5 konkretnymi źródłami (książki, artykuły, kursy, narzędzia), które mogą być przydatne w kontekście tematów z transkrypcji. Dla każdego źródła podaj tytuł, adres URL (jeśli znasz) oraz krótki opis (20-30 słów).`;
             }
-
-            // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 5
-            // Dodaj tutaj obsługę nowej opcji w tworzeniu prompta systemowego
-            //if (summary_options.includes("Twoja nowa opcja")) {
-            // prompt.new_option = `Klucz "new_option:" - dodaj opis co ma zrobić AI...`;
-            // }
             
             // Obsługa własnego polecenia AI
             if (this.wlasne_polecenia_ai && summary_options.includes(this.wlasne_polecenia_ai)) {
@@ -1569,9 +2536,9 @@ To ustawienie pozwala na zmniejszenie tych fragmentów - do wartości od 10MB do
             
             if ("resources_to_check" in prompt) {
                 exampleObject.resources_to_check = [
-                    "Książka 'Tytuł' (Autor): Krótki opis, dlaczego jest przydatna w tym kontekście.",
-                    "Artykuł 'Nazwa': Opis tego, co można z niego uzyskać.",
-                    "Kurs online 'Nazwa kursu': Jakie umiejętności rozwija i jak pomaga."
+                    "Książka 'Getting Things Done' (David Allen): https://example.com/gtd Praktyczny poradnik na temat zarządzania zadaniami.",
+                    "Artykuł 'Jak efektywnie planować': https://example.com/planning Zawiera wskazówki dotyczące planowania dnia.",
+                    "Kurs online 'Zarządzanie czasem': https://example.com/time Pomoże zoptymalizować twój harmonogram."
                 ];
             }
             
@@ -1839,12 +2806,6 @@ To ustawienie pozwala na zmniejszenie tych fragmentów - do wartości od 10MB do
                     resources_to_check: chatResponse.resources_to_check.flat().length > 0 ? 
                         chatResponse.resources_to_check.flat() : ["Brak źródeł do przejrzenia"]
                 }),
-
-                // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 6
-                // Dodaj tutaj obsługę nowej opcji w finalnym obiekcie z wynikami
-                //...(this.opcje_podsumowania.includes("Twoja nowa opcja") && {
-                //new_option: chatResponse.new_option.flat()
-                //}),
                 
                 // Dodaj własne polecenia, jeśli istnieją
                 ...(this.wlasne_polecenia_ai && 
@@ -1864,7 +2825,7 @@ To ustawienie pozwala na zmniejszenie tych fragmentów - do wartości od 10MB do
         
         makeParagraphs(transcript, maxLength = 1200) {
             const languageCode = franc(transcript);
-            console.log(`Wykryty język: ${languageCode}`);
+            console
 
             let transcriptSentences;
             let sentencesPerParagraph;
@@ -2003,1054 +2964,437 @@ To ustawienie pozwala na zmniejszenie tych fragmentów - do wartości od 10MB do
                 return 0;
             }
         },
-        
-        async createNotionPage(
-            steps,
-            notion,
-            duration,
-            formatted_chat,
-            paragraphs,
-            cost,
-            language
-        ) {
-            const today = new Date();
-            const year = today.getFullYear();
-            const month = String(today.getMonth() + 1).padStart(2, "0");
-            const day = String(today.getDate()).padStart(2, "0");
-            const date = `${year}-${month}-${day}`;
-
-            const meta = formatted_chat;
-
-            // Utworzenie tytułu na podstawie ustawień
-            const AI_generated_title = formatted_chat.title;
-            let noteTitle = "";
-            
-            if (this.wartoscTytulu == 'Oba ("Nazwa pliku – Tytuł AI")') {
-                noteTitle = `${config.fileName} – ${AI_generated_title}`;
-            } else if (this.wartoscTytulu == "Nazwa pliku") {
-                noteTitle = config.fileName;
-            } else {
-                noteTitle = AI_generated_title;
-            }
-            
-            meta.title = noteTitle.charAt(0).toUpperCase() + noteTitle.slice(1);
-
-            // Przygotowanie danych
-            meta.transcript = paragraphs.transcript;
-            if (paragraphs.summary && paragraphs.summary.length > 0) {
-                meta.long_summary = paragraphs.summary;
-            }
-            if (paragraphs.translated_transcript && paragraphs.translated_transcript.length > 0) {
-                meta.translated_transcript = paragraphs.translated_transcript;
-            }
-
-            // Dane kosztów
-            meta["transcription-cost"] = `Koszt transkrypcji: $${cost.transcript.toFixed(3)}`;
-            meta["chat-cost"] = `Koszt AI: $${cost.summary.toFixed(3)}`;
-            const totalCostArray = [cost.transcript, cost.summary];
-            
-            if (cost.language_check) {
-                meta["language-check-cost"] = `Koszt sprawdzania języka: $${cost.language_check.toFixed(3)}`;
-                totalCostArray.push(cost.language_check);
-            }
-            
-            if (cost.translated_transcript) {
-                meta["translation-cost"] = `Koszt tłumaczenia: $${cost.translated_transcript.toFixed(3)}`;
-                totalCostArray.push(cost.translated_transcript);
-            }
-            
-            const totalCost = totalCostArray.reduce((a, b) => a + b, 0);
-            meta["total-cost"] = `Całkowity koszt: $${totalCost.toFixed(3)}`;
-
-            // Usunięcie pustych elementów
-            Object.keys(meta).forEach((key) => {
-                if (Array.isArray(meta[key])) {
-                    meta[key] = meta[key].filter(Boolean);
-                }
-            });
-
-            // Przygotowanie obiektu strony Notion
-            const data = {
-                parent: {
-                    type: "database_id",
-                    database_id: this.databaseID,
-                },
-                icon: {
-                    type: "emoji",
-                    emoji: this.ikonaNotatki,
-                },
-                properties: {
-                    [this.tytulNotatki]: {
-                        title: [{ text: { content: meta.title } }],
-                    },
-                    ...(this.wlasciwoscTagu && {
-                        [this.wlasciwoscTagu]: {
-                            select: { name: this.wartoscTagu || "🎙️ Nagranie" },
-                        },
-                    }),
-                    ...(this.wlasciwoscCzasu && {
-                        [this.wlasciwoscCzasu]: {
-                             number: duration,
-                        },
-                    }),
-                    ...(this.wlasciwoscKosztu && {
-                        [this.wlasciwoscKosztu]: {
-                             number: totalCost,
-                        },
-                    }),
-                    ...(this.wlasciwoscDaty && {
-                        [this.wlasciwoscDaty]: {
-                            date: { start: date },
-                        },
-                    }),
-                    ...(this.wlasciwoscLinkuPliku && {
-                        [this.wlasciwoscLinkuPliku]: {
-                            url: config.fileLink,
-                        },
-                    }),
-                    ...(this.wlasciwoscNazwyPliku && {
-                        [this.wlasciwoscNazwyPliku]: {
-                            rich_text: [
-                                {
-                                    text: {
-                                        content: config.fileName,
-                                        link: { url: config.fileLink },
-                                    },
-                                },
-                            ],
-                        },
-                    }),
-                    ...(this.dodac_plik && this.wlasciwoscPliku && {
-                        [this.wlasciwoscPliku]: {
-                            files: [
-                                {
-                                    type: "external",
-                                    name: config.fileName,
-                                    external: { url: config.fileLink }
-                                }
-                            ]
-                        }
-                    }),
-                },
-                children: [
-                    ...(this.opcje_meta.includes("Górny dymek") ? [{
-                        callout: {
-                            rich_text: [
-                                { text: { content: "Ta transkrypcja AI została utworzona " } },
-                                { 
-                                    mention: { 
-                                        type: "date", 
-                                        date: { start: date } 
-                                    } 
-                                },
-                                { text: { content: ". " } },
-                                {
-                                    text: {
-                                        content: "Posłuchaj oryginalnego nagrania tutaj.",
-                                        link: { url: config.fileLink },
-                                    },
-                                },
-                            ],
-                            icon: { emoji: this.ikonaNotatki },
-                            color: "blue_background",
-                        },
-                    }] : []),
-                    ...(this.opcje_meta.includes("Spis treści") ? [{
-                        table_of_contents: { color: "default" },
-                    }] : []),
-                ],
-            };
-
-            const responseHolder = {};
-
-            // Przygotowanie sekcji podsumowania
-            if (this.opcje_podsumowania.includes("Podsumowanie") && meta.summary) {
-                responseHolder.summary_header = "Podsumowanie";
-                const summaryHolder = [];
-                const summaryBlockMaxLength = 80;
-                
-                // Podsumowanie może być w różnych polach zależnie od wybranego podsumowania
-                const summaryText = meta.summary || meta.day_overview || "";
-                
-                if (summaryText) {
-                    const summaryParagraphs = this.makeParagraphs(summaryText, 1200);
-                    
-                    for (let i = 0; i < summaryParagraphs.length; i += summaryBlockMaxLength) {
-                        summaryHolder.push(summaryParagraphs.slice(i, i + summaryBlockMaxLength));
-                    }
-                    responseHolder.summary = summaryHolder;
-                }
-            }
-
-            // Przygotowanie nagłówka transkrypcji
-            let transcriptHeaderValue;
-            if (
-                language &&
-                language.transcript &&
-                language.summary &&
-                language.transcript.value !== language.summary.value
-            ) {
-                transcriptHeaderValue = `Transkrypcja (${language.transcript.label})`;
-            } else {
-                transcriptHeaderValue = "Transkrypcja";
-            }
-
-            responseHolder.transcript_header = transcriptHeaderValue;
-
-            // Przygotowanie transkrypcji
-            const transcriptHolder = [];
-            const transcriptBlockMaxLength = 80;
-
-            for (let i = 0; i < meta.transcript.length; i += transcriptBlockMaxLength) {
-                const chunk = meta.transcript.slice(i, i + transcriptBlockMaxLength);
-                transcriptHolder.push(chunk);
-            }
-
-            responseHolder.transcript = transcriptHolder;
-
-            // Przygotowanie tłumaczenia transkrypcji, jeśli istnieje
-            if (paragraphs.translated_transcript && paragraphs.translated_transcript.length > 0) {
-                const translationHeader = `Przetłumaczona transkrypcja (${language.summary.label})`;
-
-                responseHolder.translation_header = translationHeader;
-
-                const translationHolder = [];
-                const translationBlockMaxLength = 80;
-
-                for (let i = 0; i < paragraphs.translated_transcript.length; i += translationBlockMaxLength) {
-                    const chunk = paragraphs.translated_transcript.slice(i, i + translationBlockMaxLength);
-                    translationHolder.push(chunk);
-                }
-
-                responseHolder.translation = translationHolder;
-            }
-
-            // Przygotowanie dodatkowych sekcji
-            const additionalInfoArray = [];
-
-            // Nagłówek "Dodatkowe informacje"
-            additionalInfoArray.push({
-                heading_1: {
-                    rich_text: [
-                        {
-                            text: {
-                                content: "Dodatkowe informacje",
-                            },
-                        },
-                    ],
-                },
-            });
-
-            // Funkcja do dodawania sekcji informacyjnych
-            function additionalInfoHandler(arr, header, itemType) {
-                if (!arr || arr.length === 0) return;
-
-                // Nagłówek sekcji - pierwsza litera wielka, reszta mała
-                const formattedHeader = header.charAt(0).toUpperCase() + header.slice(1).toLowerCase();
-                
-                const infoHeader = {
-                    heading_2: {
-                        rich_text: [
-                            {
-                                text: {
-                                    content: formattedHeader,
-                                },
-                            },
-                        ],
-                    },
-                };
-
-                additionalInfoArray.push(infoHeader);
-
-                // Dodanie callout z ostrzeżeniem dla sekcji "Argumenty"
-                if (header === "Argumenty i obszary do poprawy") {
-                    const argWarning = {
-                        callout: {
-                            rich_text: [
-                                {
-                                    text: {
-                                        content: "To potencjalne argumenty przeciwne. Tak jak każda inna część tego podsumowania, dokładność nie jest gwarantowana.",
-                                    },
-                                },
-                            ],
-                            icon: {
-                                emoji: "⚠️",
-                            },
-                            color: "orange_background",
-                        },
-                    };
-
-                    additionalInfoArray.push(argWarning);
-                }
-
-                // Dodanie elementów listy
-                for (let item of arr) {
-                    // Jeśli element jest obiektem (np. dla rozdziałów), przetwórz go odpowiednio
-                    if (typeof item === 'object' && item !== null) {
-                        let content = "";
-                        if (item.title) {
-                            content += item.title;
-                            if (item.start_time || item.end_time) {
-                                content += ` (${item.start_time || "00:00"} - ${item.end_time || "koniec"})`;
-                            }
-                        } else {
-                            content = JSON.stringify(item);
-                        }
-                        
-                        const infoItem = {
-                            [itemType]: {
-                                rich_text: [
-                                    {
-                                        text: {
-                                            content: content,
-                                        },
-                                    },
-                                ],
-                            },
-                        };
-                        
-                        additionalInfoArray.push(infoItem);
-                    } 
-                    // Standardowa obsługa dla elementów tekstowych
-                    else {
-                        const infoItem = {
-                            [itemType]: {
-                                rich_text: [
-                                    {
-                                        text: {
-                                            content: item,
-                                        },
-                                    },
-                                ],
-                            },
-                        };
-
-                        additionalInfoArray.push(infoItem);
-                    }
-                }
-            }
-
-            // Dodanie wszystkich sekcji, które zostały wybrane w opcjach podsumowania
-            if (this.opcje_podsumowania.includes("Główne punkty") && meta.main_points) {
-                additionalInfoHandler(meta.main_points, "Główne punkty", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Elementy do wykonania") && meta.action_items) {
-                additionalInfoHandler(meta.action_items, "Elementy do wykonania", "to_do");
-            }
-            
-            if (this.opcje_podsumowania.includes("Pytania uzupełniające") && meta.follow_up) {
-                additionalInfoHandler(meta.follow_up, "Pytania uzupełniające", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Historie") && meta.stories) {
-                additionalInfoHandler(meta.stories, "Historie i przykłady", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Odniesienia") && meta.references) {
-                additionalInfoHandler(meta.references, "Odniesienia i cytaty", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Argumenty") && meta.arguments) {
-                additionalInfoHandler(meta.arguments, "Argumenty i obszary do poprawy", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Powiązane tematy") && meta.related_topics) {
-                additionalInfoHandler(meta.related_topics, "Powiązane tematy", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Rozdziały") && meta.chapters) {
-                additionalInfoHandler(meta.chapters, "Rozdziały", "bulleted_list_item");
-            }
-            
-            // Opcje dziennika
-            if (this.opcje_podsumowania.includes("Kluczowe wydarzenia") && meta.key_events) {
-                additionalInfoHandler(meta.key_events, "Kluczowe wydarzenia", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Osiągnięcia") && meta.achievements) {
-                additionalInfoHandler(meta.achievements, "Osiągnięcia", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Wyzwania") && meta.challenges) {
-                additionalInfoHandler(meta.challenges, "Wyzwania", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Wnioski") && meta.insights) {
-                additionalInfoHandler(meta.insights, "Wnioski", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Plan działania") && meta.action_plan) {
-                additionalInfoHandler(meta.action_plan, "Plan działania", "to_do");
-            }
-            
-            if (this.opcje_podsumowania.includes("Rozwój osobisty") && meta.personal_growth) {
-                additionalInfoHandler([meta.personal_growth], "Rozwój osobisty", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Refleksja") && meta.reflection) {
-                additionalInfoHandler([meta.reflection], "Refleksja", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Ocena dnia (1-100)") && meta.day_rating) {
-                additionalInfoHandler([`Ocena dnia: ${meta.day_rating}/100`], "Ocena dnia", "bulleted_list_item");
-            }
-            
-            // Wspólne opcje
-            if (this.opcje_podsumowania.includes("AI rekomendacje") && meta.ai_recommendations) {
-                additionalInfoHandler(meta.ai_recommendations, "Rekomendacje AI", "bulleted_list_item");
-            }
-            
-            if (this.opcje_podsumowania.includes("Źródła do przejrzenia") && meta.resources_to_check) {
-                additionalInfoHandler(meta.resources_to_check, "Źródła do przejrzenia", "bulleted_list_item");
-            }
-
-            // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 7
-            // Dodaj tutaj obsługę nowej opcji w dodawaniu do strony Notion
-            //if (this.opcje_podsumowania.includes("Twoja nowa opcja") && meta.new_option) {
-            //additionalInfoHandler(meta.new_option, "Tytuł sekcji dla nowej opcji", "bulleted_list_item");
-            //}
-            
-            // Własne polecenia
-            if (this.wlasne_polecenia_ai && 
-                this.opcje_podsumowania.includes(this.wlasne_polecenia_ai) && 
-                meta.custom_instructions) {
-                additionalInfoHandler(meta.custom_instructions, this.wlasne_polecenia_ai, "bulleted_list_item");
-            }
-
-            // Dodanie sekcji Meta, jeśli wybrano
-            if (this.opcje_meta.includes("Meta")) {
-                const metaArray = [meta["transcription-cost"], meta["chat-cost"]];
-
-                if (meta["language-check-cost"]) {
-                    metaArray.push(meta["language-check-cost"]);
-                }
-
-                if (meta["translation-cost"]) {
-                    metaArray.push(meta["translation-cost"]);
-                }
-
-                metaArray.push(meta["total-cost"]);
-                additionalInfoHandler(metaArray, "Dane", "bulleted_list_item");
-            }
-
-            responseHolder.additional_info = additionalInfoArray;
-
-            // Tworzenie strony w Notion
-            let response;
-            try {
-                await retry(
-                    async (bail) => {
-                        try {
-                            console.log(`Tworzę stronę w Notion...`);
-                            response = await notion.pages.create(data);
-                        } catch (error) {
-                            if (400 <= error.status && error.status <= 409) {
-                                console.log("Błąd tworzenia strony Notion:", error);
-                                bail(error);
-                            } else {
-                                console.log("Błąd tworzenia strony Notion:", error);
-                                throw error;
-                            }
-                        }
-                    },
-                    {
-                        retries: 3,
-                        onRetry: (error) => console.log("Ponawiam tworzenie strony:", error),
-                    }
-                );
-            } catch (error) {
-                throw new Error("Nie udało się utworzyć strony w Notion.");
-            }
-
-            responseHolder.response = response;
-            return responseHolder;
-        },
-        
-        async updateNotionPage(notion, page) {
-            console.log(`Aktualizuję stronę Notion z pozostałymi informacjami...`);
-
-            const limiter = new Bottleneck({
-                maxConcurrent: 1,
-                minTime: 300,
-            });
-
-            const pageID = page.response.id.replace(/-/g, "");
-            const allAPIResponses = {};
-
-            // Dodawanie podsumowania
-            if (page.summary) {
-                const summaryAdditionResponses = await Promise.all(
-                    page.summary.map((summary, index) =>
-                        limiter.schedule(() => this.sendTranscripttoNotion(
-                            notion, summary, pageID, index, page.summary_header, "podsumowanie"
-                        ))
-                    )
-                );
-                allAPIResponses.summary_responses = summaryAdditionResponses;
-            }
-
-            // Dodawanie tłumaczenia
-            if (page.translation) {
-                const translationAdditionResponses = await Promise.all(
-                    page.translation.map((translation, index) =>
-                        limiter.schedule(() => this.sendTranscripttoNotion(
-                            notion, translation, pageID, index, page.translation_header, "tłumaczenie"
-                        ))
-                    )
-                );
-                allAPIResponses.translation_responses = translationAdditionResponses;
-            }
-
-            // Dodawanie transkrypcji, jeśli nie ma tłumaczenia lub ustawiono zachowanie oryginału
-            if (!this.przetlumacz_transkrypcje ||
-                this.przetlumacz_transkrypcje.includes("Zachowaj oryginał") ||
-                this.przetlumacz_transkrypcje.includes("Nie tłumacz") ||
-                !page.translation) {
-                const transcriptAdditionResponses = await Promise.all(
-                    page.transcript.map((transcript, index) =>
-                        limiter.schedule(() => this.sendTranscripttoNotion(
-                            notion, transcript, pageID, index, page.transcript_header, "transkrypcja"
-                        ))
-                    )
-                );
-                allAPIResponses.transcript_responses = transcriptAdditionResponses;
-            }
-
-            // Dodawanie dodatkowych informacji
-            if (page.additional_info?.length > 0) {
-                const additionalInfo = page.additional_info;
-                const infoHolder = [];
-                const infoBlockMaxLength = 95;
-
-                for (let i = 0; i < additionalInfo.length; i += infoBlockMaxLength) {
-                    infoHolder.push(additionalInfo.slice(i, i + infoBlockMaxLength));
-                }
-
-                const additionalInfoAdditionResponses = await Promise.all(
-                    infoHolder.map((info) =>
-                        limiter.schedule(() => this.sendAdditionalInfotoNotion(notion, info, pageID))
-                    )
-                );
-
-                allAPIResponses.additional_info_responses = additionalInfoAdditionResponses;
-            }
-
-            return allAPIResponses;
-        },
-        
-        async sendTranscripttoNotion(
-            notion,
-            transcript,
-            pageID,
-            index,
-            title,
-            logValue
-        ) {
-            return retry(
-                async (bail, attempt) => {
-                    const data = {
-                        block_id: pageID,
-                        children: [],
-                    };
-
-                    if (index === 0) {
-                        data.children.push({
-                            heading_1: {
-                                rich_text: [{ text: { content: title } }],
-                            },
-                        });
-                    }
-
-                    for (let sentence of transcript) {
-                        data.children.push({
-                            paragraph: {
-                                rich_text: [{ text: { content: sentence } }],
-                            },
-                        });
-                    }
-
-                    console.log(`Próba ${attempt}: Wysyłam ${logValue} fragment ${index} do Notion...`);
-                    return await notion.blocks.children.append(data);
-                },
-                {
-                    retries: 3,
-                    onRetry: (error, attempt) => console.log(
-                        `Ponawiam dodawanie ${logValue} (próba ${attempt}):`, error
-                    ),
-                }
-            );
-        },
-        
-        async sendAdditionalInfotoNotion(notion, additionalInfo, pageID) {
-            return retry(
-                async (bail, attempt) => {
-                    const data = {
-                        block_id: pageID,
-                        children: additionalInfo,
-                    };
-
-                    console.log(`Próba ${attempt}: Wysyłam dodatkowe informacje do Notion...`);
-                    return await notion.blocks.children.append(data);
-                },
-                {
-                    retries: 3,
-                    onRetry: (error, attempt) => console.log(
-                        `Ponawiam dodawanie informacji (próba ${attempt}):`, error
-                    ),
-                }
-            );
-        },
-        
-        async cleanTmp(cleanChunks = true) {
-            console.log(`Czyszczę katalog /tmp/...`);
-
-            if (config.filePath && fs.existsSync(config.filePath)) {
-                await fs.promises.unlink(config.filePath);
-            }
-
-            if (cleanChunks && config.chunkDir.length > 0 && fs.existsSync(config.chunkDir)) {
-                await execAsync(`rm -rf "${config.chunkDir}"`);
-            }
-        },
     },
     
-  async run({ steps, $ }) {
-  // Obiekt do mierzenia czasu
-  let stageDurations = {
-    setup: 0,
-    download: 0,
-    transcription: 0,
-    transcriptCleanup: 0,
-    moderation: 0,
-    summary: 0,
-    translation: 0,
-    notionCreation: 0,
-    notionUpdate: 0,
-  };
+ async run({ steps, $ }) {
+    // Obiekt do mierzenia czasu
+    let stageDurations = {
+        setup: 0,
+        download: 0,
+        transcription: 0,
+        transcriptCleanup: 0,
+        moderation: 0,
+        summary: 0,
+        translation: 0,
+        notionCreation: 0,
+        notionUpdate: 0,
+    };
 
-  function totalDuration(obj) {
-    return Object.keys(obj)
-      .filter((key) => typeof obj[key] === "number" && key !== "total")
-      .reduce((a, b) => a + obj[b], 0);
-  }
+    function totalDuration(obj) {
+        return Object.keys(obj)
+            .filter((key) => typeof obj[key] === "number" && key !== "total")
+            .reduce((a, b) => a + obj[b], 0);
+    }
 
-  let previousTime = process.hrtime.bigint();
+    let previousTime = process.hrtime.bigint();
 
-  /* -- Etap konfiguracji -- */
-  const fileID = this.steps.trigger.event.id;
-  const testEventId = "52776A9ACB4F8C54!134";
+    /* -- Etap konfiguracji -- */
+    const fileID = this.steps.trigger.event.id;
+    const testEventId = "52776A9ACB4F8C54!134";
 
-  if (fileID === testEventId) {
-    throw new Error(
-      `Oops, ten workflow nie zadziała z przyciskiem **Generate Test Event**. Prześlij plik audio do Dropbox, wybierz go z listy poniżej przycisku.`
-    );
-  }
+    if (fileID === testEventId) {
+        throw new Error(
+            `Oops, ten workflow nie zadziała z przyciskiem **Generate Test Event**. Prześlij plik audio do Dropbox, wybierz go z listy poniżej przycisku.`
+        );
+    }
 
-  console.log("Sprawdzam wielkość pliku...");
-  await this.checkSize(this.steps.trigger.event.size);
+    console.log("Sprawdzam wielkość pliku...");
+    await this.checkSize(this.steps.trigger.event.size);
 
-  console.log("Sprawdzam ustawienia języka...");
-  this.setLanguages();
+    console.log("Sprawdzam ustawienia języka...");
+    this.setLanguages();
 
-  // Zapisywanie i odczytywanie własnych poleceń AI
-  try {
-    // Odczytywanie istniejących własnych poleceń z zmiennych środowiskowych Pipedream
-    let savedCustomPrompts = [];
-    if ($.service.db) {
-      const savedPromptsStr = await $.service.db.get("customPrompts");
-      if (savedPromptsStr) {
-        try {
-          savedCustomPrompts = JSON.parse(savedPromptsStr);
-          console.log("Odczytano zapisane własne polecenia:", savedCustomPrompts);
-        } catch (e) {
-          console.log("Błąd parsowania zapisanych poleceń:", e);
-          savedCustomPrompts = [];
+    // Zapisywanie i odczytywanie własnych poleceń AI
+    try {
+        // Odczytywanie istniejących własnych poleceń z zmiennych środowiskowych Pipedream
+        let savedCustomPrompts = [];
+        if ($.service.db) {
+            const savedPromptsStr = await $.service.db.get("customPrompts");
+            if (savedPromptsStr) {
+                try {
+                    savedCustomPrompts = JSON.parse(savedPromptsStr);
+                    console.log("Odczytano zapisane własne polecenia:", savedCustomPrompts);
+                } catch (e) {
+                    console.log("Błąd parsowania zapisanych poleceń:", e);
+                    savedCustomPrompts = [];
+                }
+            }
         }
-      }
+
+        // Dodaj aktualne własne polecenie, jeśli istnieje i nie ma go jeszcze w zapisanych
+        if (this.wlasne_polecenia_ai && this.wlasne_polecenia_ai.trim() !== "") {
+            const newPrompt = this.wlasne_polecenia_ai.trim();
+            if (!savedCustomPrompts.includes(newPrompt)) {
+                savedCustomPrompts.push(newPrompt);
+                console.log("Dodano nowe polecenie do zapisanych:", newPrompt);
+            }
+
+            // Zapisz zaktualizowane polecenia z powrotem do zmiennych środowiskowych
+            if ($.service.db) {
+                await $.service.db.set("customPrompts", JSON.stringify(savedCustomPrompts));
+                console.log("Zapisano zaktualizowane polecenia");
+            }
+        }
+    } catch (error) {
+        console.log("Błąd podczas przetwarzania własnych poleceń:", error);
+        // Nie przerywaj wykonania, jeśli wystąpi błąd z zapisem/odczytem własnych poleceń
     }
 
-    // Dodaj aktualne własne polecenie, jeśli istnieje i nie ma go jeszcze w zapisanych
-    if (this.wlasne_polecenia_ai && this.wlasne_polecenia_ai.trim() !== "") {
-      const newPrompt = this.wlasne_polecenia_ai.trim();
-      if (!savedCustomPrompts.includes(newPrompt)) {
-        savedCustomPrompts.push(newPrompt);
-        console.log("Dodano nowe polecenie do zapisanych:", newPrompt);
-      }
+    const logSettings = {
+        "Usługa AI": this.usluga_ai,
+        "Model Chat": this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+        "Opcje podsumowania": this.opcje_podsumowania,
+        "Gęstość podsumowania": this.gestosc_podsumowania || "2750 (domyślna)",
+        "Język podsumowania": this.jezyk_podsumowania || "Nie ustawiono",
+        "Język tytułu": this.jezyk_tytulu || "Nie ustawiono",
+        "Język transkrypcji": this.jezyk_transkrypcji || "Nie ustawiono",
+        "Poziom szczegółowości": this.szczegolowoc || "Średnia (domyślna)",
+        "Rozmiar fragmentu": this.rozmiar_fragmentu || "24 (domyślny)",
+        "Sprawdzanie moderacji": this.wylacz_moderacje ? "Wyłączone" : "Włączone",
+        "Temperatura": this.temperatura || "2 (domyślna)",
+        "Własne polecenia AI": this.wlasne_polecenia_ai || "Brak",
+    };
 
-      // Zapisz zaktualizowane polecenia z powrotem do zmiennych środowiskowych
-      if ($.service.db) {
-        await $.service.db.set("customPrompts", JSON.stringify(savedCustomPrompts));
-        console.log("Zapisano zaktualizowane polecenia");
-      }
-    }
-  } catch (error) {
-    console.log("Błąd podczas przetwarzania własnych poleceń:", error);
-    // Nie przerywaj wykonania, jeśli wystąpi błąd z zapisem/odczytem własnych poleceń
-  }
+    console.log("Ustawienia:");
+    console.dir(logSettings);
 
-  const logSettings = {
-    "Usługa AI": this.usluga_ai,
-    "Model Chat": this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
-    "Opcje podsumowania": this.opcje_podsumowania,
-    "Gęstość podsumowania": this.gestosc_podsumowania || "2750 (domyślna)",
-    "Język podsumowania": this.jezyk_podsumowania || "Nie ustawiono",
-    "Język tytułu": this.jezyk_tytulu || "Nie ustawiono",
-    "Język transkrypcji": this.jezyk_transkrypcji || "Nie ustawiono",
-    "Poziom szczegółowości": this.szczegolowoc || "Średnia (domyślna)",
-    "Rozmiar fragmentu": this.rozmiar_fragmentu || "24 (domyślny)",
-    "Sprawdzanie moderacji": this.wylacz_moderacje ? "Wyłączone" : "Włączone",
-    "Temperatura": this.temperatura || "2 (domyślna)",
-    "Własne polecenia AI": this.wlasne_polecenia_ai || "Brak",
-  };
+    const notion = new Client({ auth: this.notion.$auth.oauth_access_token });
+    const fileInfo = { log_settings: logSettings };
 
-  console.log("Ustawienia:");
-  console.dir(logSettings);
-
-  const notion = new Client({ auth: this.notion.$auth.oauth_access_token });
-  const fileInfo = { log_settings: logSettings };
-
-  // Zapisz czas etapu konfiguracji
-  stageDurations.setup = Number(process.hrtime.bigint() - previousTime) / 1e6;
-  console.log(`Czas konfiguracji: ${stageDurations.setup}ms`);
-  previousTime = process.hrtime.bigint();
-
-  /* -- Etap pobierania -- */
-  if (this.steps.google_drive_download?.$return_value?.name) {
-    // Google Drive
-    fileInfo.cloud_app = "Google Drive";
-    fileInfo.file_name = this.steps.google_drive_download.$return_value.name.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\\/]/g, "");
-    fileInfo.path = `/tmp/${fileInfo.file_name}`;
-    fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
-    fileInfo.link = this.steps.trigger.event.webViewLink;
-    
-    if (!config.supportedMimes.includes(fileInfo.mime)) {
-      throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
-    }
-  } else if (this.steps.download_file?.$return_value?.name) {
-    // Google Drive alternatywna metoda
-    fileInfo.cloud_app = "Google Drive";
-    fileInfo.file_name = this.steps.download_file.$return_value.name.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\\/]/g, "");
-    fileInfo.path = `/tmp/${fileInfo.file_name}`;
-    fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
-    fileInfo.link = this.steps.trigger.event.webViewLink;
-    
-    if (!config.supportedMimes.includes(fileInfo.mime)) {
-      throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
-    }
-  } else if (this.steps.ms_onedrive_download?.$return_value && 
-    /^\/tmp\/.+/.test(this.steps.ms_onedrive_download.$return_value)) {
-    // OneDrive
-    fileInfo.cloud_app = "OneDrive";
-    fileInfo.path = this.steps.ms_onedrive_download.$return_value.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\]/g, "");
-    fileInfo.file_name = fileInfo.path.replace(/^\/tmp\//, "");
-    fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
-    fileInfo.link = this.steps.trigger.event.webUrl;
-    
-    if (!config.supportedMimes.includes(fileInfo.mime)) {
-      throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
-    }
-  } else {
-    // Dropbox
-    fileInfo.cloud_app = "Dropbox";
-    Object.assign(
-      fileInfo,
-      await this.downloadToTmp(
-        this.steps.trigger.event.link,
-        this.steps.trigger.event.path_lower,
-        this.steps.trigger.event.name
-      )
-    );
-    fileInfo.link = encodeURI("https://www.dropbox.com/home" + this.steps.trigger.event.path_lower);
-  }
-
-  config.filePath = fileInfo.path;
-  config.fileName = fileInfo.file_name;
-  config.fileLink = fileInfo.link;
-
-  fileInfo.duration = await this.getDuration(fileInfo.path);
-
-  // Zapisz czas etapu pobierania
-  stageDurations.download = Number(process.hrtime.bigint() - previousTime) / 1e6;
-  console.log(`Czas pobierania: ${stageDurations.download}ms (${stageDurations.download / 1000}s)`);
-  previousTime = process.hrtime.bigint();
-
-  /* -- Etap transkrypcji -- */
-  const openai = new OpenAI({
-    apiKey: this.openai?.$auth.api_key,
-  });
-
-  // Inicjalizacja klienta Anthropic, jeśli potrzebny
-  let anthropic = null;
-  if (this.usluga_ai === "Anthropic" && this.anthropic) {
-    anthropic = new Anthropic({
-      apiKey: this.anthropic.$auth.api_key,
-    });
-  }
-
-  fileInfo.whisper = await this.chunkFileAndTranscribe({ file: fileInfo.path }, openai);
-  await this.cleanTmp();
-
-  // Zapisz czas etapu transkrypcji
-  stageDurations.transcription = Number(process.hrtime.bigint() - previousTime) / 1e6;
-  console.log(`Czas transkrypcji: ${stageDurations.transcription}ms (${stageDurations.transcription / 1000}s)`);
-  previousTime = process.hrtime.bigint();
-
-  /* -- Etap czyszczenia transkrypcji -- */
-  const maxTokens = this.gestosc_podsumowania || (this.usluga_ai === "Anthropic" ? 5000 : 2750);
-  console.log(`Maksymalna liczba tokenów na fragment: ${maxTokens}`);
-
-  fileInfo.full_transcript = await this.combineWhisperChunks(fileInfo.whisper);
-  fileInfo.longest_gap = this.findLongestPeriodGap(fileInfo.full_transcript, maxTokens);
-
-  if (fileInfo.longest_gap.encodedGapLength > maxTokens) {
-    console.log(`Najdłuższe zdanie przekracza limit tokenów. Fragmenty będą dzielone w środku zdań.`);
-  }
-
-  // Zapisz czas etapu czyszczenia
-  stageDurations.transcriptCleanup = Number(process.hrtime.bigint() - previousTime) / 1e6;
-  console.log(`Czas czyszczenia transkrypcji: ${stageDurations.transcriptCleanup}ms`);
-  previousTime = process.hrtime.bigint();
-
-  /* -- Etap moderacji (opcjonalnie) -- */
-  if (!this.wylacz_moderacje) {
-    await this.moderationCheck(fileInfo.full_transcript, openai);
-    
-    stageDurations.moderation = Number(process.hrtime.bigint() - previousTime) / 1e6;
-    console.log(`Czas moderacji: ${stageDurations.moderation}ms (${stageDurations.moderation / 1000}s)`);
+    // Zapisz czas etapu konfiguracji
+    stageDurations.setup = Number(process.hrtime.bigint() - previousTime) / 1e6;
+    console.log(`Czas konfiguracji: ${stageDurations.setup}ms`);
     previousTime = process.hrtime.bigint();
-  } else {
-    console.log(`Moderacja wyłączona.`);
-  }
 
-  /* -- Etap podsumowania -- */
-  const encodedTranscript = encode(fileInfo.full_transcript);
-  console.log(`Pełna transkrypcja ma ${encodedTranscript.length} tokenów.`);
+    /* -- Etap pobierania -- */
+    if (this.steps.google_drive_download?.$return_value?.name) {
+        // Google Drive
+        fileInfo.cloud_app = "Google Drive";
+        fileInfo.file_name = this.steps.google_drive_download.$return_value.name.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\\/]/g, "");
+        fileInfo.path = `/tmp/${fileInfo.file_name}`;
+        fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
+        fileInfo.link = this.steps.trigger.event.webViewLink;
+        
+        if (!config.supportedMimes.includes(fileInfo.mime)) {
+            throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
+        }
+    } else if (this.steps.download_file?.$return_value?.name) {
+        // Google Drive alternatywna metoda
+        fileInfo.cloud_app = "Google Drive";
+        fileInfo.file_name = this.steps.download_file.$return_value.name.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\\/]/g, "");
+        fileInfo.path = `/tmp/${fileInfo.file_name}`;
+        fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
+        fileInfo.link = this.steps.trigger.event.webViewLink;
+        
+        if (!config.supportedMimes.includes(fileInfo.mime)) {
+            throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
+        }
+    } else if (this.steps.ms_onedrive_download?.$return_value && 
+        /^\/tmp\/.+/.test(this.steps.ms_onedrive_download.$return_value)) {
+        // OneDrive
+        fileInfo.cloud_app = "OneDrive";
+        fileInfo.path = this.steps.ms_onedrive_download.$return_value.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\]/g, "");
+        fileInfo.file_name = fileInfo.path.replace(/^\/tmp\//, "");
+        fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
+        fileInfo.link = this.steps.trigger.event.webUrl;
+        
+        if (!config.supportedMimes.includes(fileInfo.mime)) {
+            throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
+        }
+    } else {
+        // Dropbox
+        fileInfo.cloud_app = "Dropbox";
+        Object.assign(
+            fileInfo,
+            await this.downloadToTmp(
+                this.steps.trigger.event.link,
+                this.steps.trigger.event.path_lower,
+                this.steps.trigger.event.name
+            )
+        );
+        fileInfo.link = encodeURI("https://www.dropbox.com/home" + this.steps.trigger.event.path_lower);
+    }
 
-  fileInfo.transcript_chunks = this.splitTranscript(
-    encodedTranscript,
-    maxTokens,
-    fileInfo.longest_gap
-  );
+    config.filePath = fileInfo.path;
+    config.fileName = fileInfo.file_name;
+    config.fileLink = fileInfo.link;
 
-  // Utwórz klienta AI na podstawie wyboru usługi
-  const llm = this.usluga_ai === "Anthropic" ? anthropic : openai;
+    fileInfo.duration = await this.getDuration(fileInfo.path);
 
-  // Jeśli nie wybrano opcji podsumowania, generuj tylko tytuł
-  if (!this.opcje_podsumowania || this.opcje_podsumowania.length === 0) {
-    const titleArr = [fileInfo.transcript_chunks[0]];
-    fileInfo.summary = await this.sendToChat(llm, titleArr);
-  } else {
-    fileInfo.summary = await this.sendToChat(llm, fileInfo.transcript_chunks);
-  }
+    // Zapisz czas etapu pobierania
+    stageDurations.download = Number(process.hrtime.bigint() - previousTime) / 1e6;
+    console.log(`Czas pobierania: ${stageDurations.download}ms (${stageDurations.download / 1000}s)`);
+    previousTime = process.hrtime.bigint();
 
-  fileInfo.formatted_chat = await this.formatChat(fileInfo.summary);
-  
-  // Przygotuj akapity transkrypcji
-  fileInfo.paragraphs = {
-    transcript: this.makeParagraphs(fileInfo.full_transcript, 1200),
-    ...(this.opcje_podsumowania.includes("Podsumowanie") && {
-      summary: this.makeParagraphs(fileInfo.formatted_chat.summary, 1200),
-    }),
-  };
+    /* -- Etap transkrypcji -- */
+    const openai = new OpenAI({
+        apiKey: this.openai?.$auth.api_key,
+    });
 
-  // Oblicz koszty
-  fileInfo.cost = {};
-  fileInfo.cost.transcript = await this.calculateTranscriptCost(
-    fileInfo.duration,
-    "openai",
-    "audio",
-    "whisper"
-  );
+    // Inicjalizacja klienta Anthropic, jeśli potrzebny
+    let anthropic = null;
+    if (this.usluga_ai === "Anthropic" && this.anthropic) {
+        anthropic = new Anthropic({
+            apiKey: this.anthropic.$auth.api_key,
+        });
+    }
 
-  const summaryUsage = {
-    prompt_tokens: fileInfo.summary.reduce((total, item) => total + item.usage.prompt_tokens, 0),
-    completion_tokens: fileInfo.summary.reduce((total, item) => total + item.usage.completion_tokens, 0),
-  };
+    fileInfo.whisper = await this.chunkFileAndTranscribe({ file: fileInfo.path }, openai);
+    await this.cleanTmp();
 
-  fileInfo.cost.summary = await this.calculateGPTCost(
-    summaryUsage,
-    this.usluga_ai,
-    "text",
-    this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
-    "Podsumowanie"
-  );
+    // Zapisz czas etapu transkrypcji
+    stageDurations.transcription = Number(process.hrtime.bigint() - previousTime) / 1e6;
+    console.log(`Czas transkrypcji: ${stageDurations.transcription}ms (${stageDurations.transcription / 1000}s)`);
+    previousTime = process.hrtime.bigint();
 
-  // Zapisz czas etapu podsumowania
-  stageDurations.summary = Number(process.hrtime.bigint() - previousTime) / 1e6;
-  console.log(`Czas podsumowania: ${stageDurations.summary}ms (${stageDurations.summary / 1000}s)`);
-  previousTime = process.hrtime.bigint();
+    /* -- Etap czyszczenia transkrypcji -- */
+    const maxTokens = this.gestosc_podsumowania || (this.usluga_ai === "Anthropic" ? 5000 : 2750);
+    console.log(`Maksymalna liczba tokenów na fragment: ${maxTokens}`);
 
-  /* -- Etap tłumaczenia (opcjonalnie) -- */
-  if (this.jezyk_podsumowania || this.jezyk_tytulu) {
-    console.log(`Sprawdzam język transkrypcji...`);
+    fileInfo.full_transcript = await this.combineWhisperChunks(fileInfo.whisper);
+    fileInfo.longest_gap = this.findLongestPeriodGap(fileInfo.full_transcript, maxTokens);
 
-    // Wykryj język transkrypcji
-    const detectedLanguage = await this.detectLanguage(
-      llm,
-      this.usluga_ai,
-      this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
-      fileInfo.paragraphs.transcript[0]
+    if (fileInfo.longest_gap.encodedGapLength > maxTokens) {
+        console.log(`Najdłuższe zdanie przekracza limit tokenów. Fragmenty będą dzielone w środku zdań.`);
+    }
+
+    // Zapisz czas etapu czyszczenia
+    stageDurations.transcriptCleanup = Number(process.hrtime.bigint() - previousTime) / 1e6;
+    console.log(`Czas czyszczenia transkrypcji: ${stageDurations.transcriptCleanup}ms`);
+    previousTime = process.hrtime.bigint();
+
+    /* -- Etap moderacji (opcjonalnie) -- */
+    if (!this.wylacz_moderacje) {
+        await this.moderationCheck(fileInfo.full_transcript, openai);
+        
+        stageDurations.moderation = Number(process.hrtime.bigint() - previousTime) / 1e6;
+        console.log(`Czas moderacji: ${stageDurations.moderation}ms (${stageDurations.moderation / 1000}s)`);
+        previousTime = process.hrtime.bigint();
+    } else {
+        console.log(`Moderacja wyłączona.`);
+    }
+
+    /* -- Etap podsumowania -- */
+    const encodedTranscript = encode(fileInfo.full_transcript);
+    console.log(`Pełna transkrypcja ma ${encodedTranscript.length} tokenów.`);
+
+    fileInfo.transcript_chunks = this.splitTranscript(
+        encodedTranscript,
+        maxTokens,
+        fileInfo.longest_gap
     );
 
-    fileInfo.language = {
-      transcript: await this.formatDetectedLanguage(
-        detectedLanguage.choices[0].message.content
-      ),
-      summary: this.jezyk_podsumowania
-        ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
-        : "Nie ustawiono",
-      title: this.jezyk_tytulu
-        ? lang.LANGUAGES.find((l) => l.value === this.jezyk_tytulu)
-        : (this.jezyk_podsumowania
-          ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
-          : "Nie ustawiono")
+    // Utwórz klienta AI na podstawie wyboru usługi
+    const llm = this.usluga_ai === "Anthropic" ? anthropic : openai;
+
+    // Jeśli nie wybrano opcji podsumowania, generuj tylko tytuł
+    if (!this.opcje_podsumowania || this.opcje_podsumowania.length === 0) {
+        const titleArr = [fileInfo.transcript_chunks[0]];
+        fileInfo.summary = await this.sendToChat(llm, titleArr);
+    } else {
+        fileInfo.summary = await this.sendToChat(llm, fileInfo.transcript_chunks);
+    }
+
+    fileInfo.formatted_chat = await this.formatChat(fileInfo.summary);
+    
+    // Przygotuj akapity transkrypcji
+    fileInfo.paragraphs = {
+        transcript: this.makeParagraphs(fileInfo.full_transcript, 1200),
+        ...(this.opcje_podsumowania.includes("Podsumowanie") && {
+            summary: this.makeParagraphs(fileInfo.formatted_chat.summary, 1200),
+        }),
     };
 
-    console.log("Informacje o językach:", JSON.stringify(fileInfo.language, null, 2));
-
-    const languageCheckUsage = {
-      prompt_tokens: detectedLanguage.usage.prompt_tokens,
-      completion_tokens: detectedLanguage.usage.completion_tokens,
-    };
-
-    fileInfo.cost.language_check = await this.calculateGPTCost(
-      languageCheckUsage,
-      this.usluga_ai,
-      "text",
-      this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
-      "Sprawdzanie języka"
+    // Oblicz koszty
+    fileInfo.cost = {};
+    fileInfo.cost.transcript = await this.calculateTranscriptCost(
+        fileInfo.duration,
+        "openai",
+        "audio",
+        "whisper"
     );
 
-    // Tłumaczenie transkrypcji, jeśli opcja została włączona i języki są różne
-    if (this.przetlumacz_transkrypcje?.includes("Przetłumacz") &&
-      fileInfo.language.transcript.value !== fileInfo.language.summary.value) {
-      console.log(
-        `Język transkrypcji (${fileInfo.language.transcript.label}) różni się od języka podsumowania (${fileInfo.language.summary.label}). Tłumaczę transkrypcję...`
-      );
+    const summaryUsage = {
+        prompt_tokens: fileInfo.summary.reduce((total, item) => total + item.usage.prompt_tokens, 0),
+        completion_tokens: fileInfo.summary.reduce((total, item) => total + item.usage.completion_tokens, 0),
+    };
 
-      const translatedTranscript = await this.translateParagraphs(
-        llm,
-        this.usluga_ai,
-        this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
-        fileInfo.paragraphs.transcript,
-        fileInfo.language.summary,
-        this.temperatura || 2
-      );
-
-      fileInfo.paragraphs.translated_transcript = this.makeParagraphs(
-        translatedTranscript.paragraphs.join(" "),
-        1200
-      );
-      
-      fileInfo.cost.translated_transcript = await this.calculateGPTCost(
-        translatedTranscript.usage,
+    fileInfo.cost.summary = await this.calculateGPTCost(
+        summaryUsage,
         this.usluga_ai,
         "text",
-        translatedTranscript.model,
-        "Tłumaczenie"
-      );
+        this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+        "Podsumowanie"
+    );
 
-      stageDurations.translation = Number(process.hrtime.bigint() - previousTime) / 1e6;
-      console.log(`Czas tłumaczenia: ${stageDurations.translation}ms (${stageDurations.translation / 1000}s)`);
-      previousTime = process.hrtime.bigint();
-    }
-    
-    // Tłumaczenie tytułu, jeśli to potrzebne
-    if (this.jezyk_tytulu && 
-      fileInfo.language.transcript.value !== fileInfo.language.title.value && 
-      fileInfo.formatted_chat.title) {
-      console.log(
-        `Język transkrypcji (${fileInfo.language.transcript.label}) różni się od języka tytułu (${fileInfo.language.title.label}). Tłumaczę tytuł...`
-      );
-      
-      // Systemowy prompt dla tłumaczenia tytułu
-      const titleSystemPrompt = `Przetłumacz następujący tytuł na język ${fileInfo.language.title.label} (kod: "${fileInfo.language.title.value}"). 
-      Zwróć tylko przetłumaczony tytuł, bez żadnych dodatkowych wyjaśnień czy komentarzy.`;
-      
-      try {
-        let translatedTitleResponse;
-        
-        if (this.usluga_ai === "OpenAI") {
-          translatedTitleResponse = await openai.chat.completions.create({
-            model: this.model_chat || "gpt-3.5-turbo",
-            messages: [
-              {
-                role: "system",
-                content: titleSystemPrompt,
-              },
-              {
-                role: "user",
-                content: fileInfo.formatted_chat.title,
-              },
-            ],
-            temperature: (this.temperatura || 2) / 10,
-          });
-          
-          fileInfo.formatted_chat.title = translatedTitleResponse.choices[0].message.content.trim();
-        } else if (this.usluga_ai === "Anthropic") {
-          translatedTitleResponse = await anthropic.messages.create({
-            model: this.model_anthropic || "claude-3-5-haiku-20241022",
-            max_tokens: 100,
-            messages: [
-              {
-                role: "user",
-                content: fileInfo.formatted_chat.title,
-              }
-            ],
-            system: titleSystemPrompt,
-            temperature: (this.temperatura || 2) / 10,
-          });
-          
-          fileInfo.formatted_chat.title = translatedTitleResponse.content[0].text.trim();
+    // Zapisz czas etapu podsumowania
+    stageDurations.summary = Number(process.hrtime.bigint() - previousTime) / 1e6;
+    console.log(`Czas podsumowania: ${stageDurations.summary}ms (${stageDurations.summary / 1000}s)`);
+    previousTime = process.hrtime.bigint();
+
+    /* -- Etap tłumaczenia (opcjonalnie) -- */
+    if (this.jezyk_podsumowania || this.jezyk_tytulu) {
+        console.log(`Sprawdzam język transkrypcji...`);
+
+        // Użyj poprawionej funkcji detectLanguage
+        try {
+            fileInfo.language = {
+                transcript: await this.detectLanguage(
+                    fileInfo.paragraphs.transcript[0],
+                    llm,
+                    this.usluga_ai,
+                    this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat
+                ),
+                summary: this.jezyk_podsumowania
+                    ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
+                    : "Nie ustawiono",
+                title: this.jezyk_tytulu
+                    ? lang.LANGUAGES.find((l) => l.value === this.jezyk_tytulu)
+                    : (this.jezyk_podsumowania
+                        ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
+                        : "Nie ustawiono")
+            };
+
+            console.log("Informacje o językach:", JSON.stringify(fileInfo.language, null, 2));
+
+            // Tłumaczenie transkrypcji, jeśli opcja została włączona i języki są różne
+            if (this.przetlumacz_transkrypcje?.includes("Przetłumacz") &&
+                fileInfo.language.transcript.value !== fileInfo.language.summary.value) {
+                console.log(
+                    `Język transkrypcji (${fileInfo.language.transcript.label}) różni się od języka podsumowania (${fileInfo.language.summary.label}). Tłumaczę transkrypcję...`
+                );
+
+                const translatedTranscript = await this.translateParagraphs(
+                    llm,
+                    this.usluga_ai,
+                    this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+                    fileInfo.paragraphs.transcript,
+                    fileInfo.language.summary,
+                    this.temperatura || 2
+                );
+
+                fileInfo.paragraphs.translated_transcript = this.makeParagraphs(
+                    translatedTranscript.paragraphs.join(" "),
+                    1200
+                );
+                
+                const translationUsage = {
+                    prompt_tokens: translatedTranscript.usage.prompt_tokens,
+                    completion_tokens: translatedTranscript.usage.completion_tokens,
+                };
+                
+                fileInfo.cost.translated_transcript = await this.calculateGPTCost(
+                    translationUsage,
+                    this.usluga_ai,
+                    "text",
+                    translatedTranscript.model,
+                    "Tłumaczenie"
+                );
+
+                stageDurations.translation = Number(process.hrtime.bigint() - previousTime) / 1e6;
+                console.log(`Czas tłumaczenia: ${stageDurations.translation}ms (${stageDurations.translation / 1000}s)`);
+                previousTime = process.hrtime.bigint();
+            }
+            
+            // Tłumaczenie tytułu, jeśli to potrzebne
+            if (this.jezyk_tytulu && 
+                fileInfo.language.transcript.value !== fileInfo.language.title.value && 
+                fileInfo.formatted_chat.title) {
+                console.log(
+                    `Język transkrypcji (${fileInfo.language.transcript.label}) różni się od języka tytułu (${fileInfo.language.title.label}). Tłumaczę tytuł...`
+                );
+                
+                // Systemowy prompt dla tłumaczenia tytułu
+                const titleSystemPrompt = `Przetłumacz następujący tytuł na język ${fileInfo.language.title.label} (kod: "${fileInfo.language.title.value}"). 
+                Zwróć tylko przetłumaczony tytuł, bez żadnych dodatkowych wyjaśnień czy komentarzy.`;
+                
+                try {
+                    let translatedTitleResponse;
+                    
+                    if (this.usluga_ai === "OpenAI") {
+                        translatedTitleResponse = await openai.chat.completions.create({
+                            model: this.model_chat || "gpt-3.5-turbo",
+                            messages: [
+                                {
+                                    role: "system",
+                                    content: titleSystemPrompt,
+                                },
+                                {
+                                    role: "user",
+                                    content: fileInfo.formatted_chat.title,
+                                },
+                            ],
+                            temperature: (this.temperatura || 2) / 10,
+                        });
+                        
+                        fileInfo.formatted_chat.title = translatedTitleResponse.choices[0].message.content.trim();
+                    } else if (this.usluga_ai === "Anthropic") {
+                        translatedTitleResponse = await anthropic.messages.create({
+                            model: this.model_anthropic || "claude-3-5-haiku-20241022",
+                            max_tokens: 100,
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: fileInfo.formatted_chat.title,
+                                }
+                            ],
+                            system: titleSystemPrompt,
+                            temperature: (this.temperatura || 2) / 10,
+                        });
+                        
+                        fileInfo.formatted_chat.title = translatedTitleResponse.content[0].text.trim();
+                    }
+                    
+                    console.log(`Tytuł przetłumaczony na ${fileInfo.language.title.label}: ${fileInfo.formatted_chat.title}`);
+                } catch (error) {
+                    console.error(`Błąd podczas tłumaczenia tytułu: ${error.message}`);
+                    // Nie przerywamy działania, jeśli tłumaczenie tytułu się nie powiedzie
+                }
+            }
+        } catch (error) {
+            console.error(`Błąd podczas wykrywania języka: ${error.message}`);
+            // Kontynuuj bez tłumaczenia w przypadku błędu
         }
-        
-        console.log(`Tytuł przetłumaczony na ${fileInfo.language.title.label}: ${fileInfo.formatted_chat.title}`);
-      } catch (error) {
-        console.error(`Błąd podczas tłumaczenia tytułu: ${error.message}`);
-        // Nie przerywamy działania, jeśli tłumaczenie tytułu się nie powiedzie
-      }
     }
-  }
 
-  /* -- Etap tworzenia strony w Notion -- */
-  fileInfo.notion_response = await this.createNotionPage(
-    this.steps,
-    notion,
-    fileInfo.duration,
-    fileInfo.formatted_chat,
-    fileInfo.paragraphs,
-    fileInfo.cost,
-    fileInfo.language
-  );
+    /* -- Etap tworzenia strony w Notion -- */
+    fileInfo.notion_response = await this.createNotionPage(
+        this.steps,
+        notion,
+        fileInfo.duration,
+        fileInfo.formatted_chat,
+        fileInfo.paragraphs,
+        fileInfo.cost,
+        fileInfo.language
+    );
 
-  stageDurations.notionCreation = Number(process.hrtime.bigint() - previousTime) / 1e6;
-  console.log(`Czas tworzenia strony: ${stageDurations.notionCreation}ms (${stageDurations.notionCreation / 1000}s)`);
-  previousTime = process.hrtime.bigint();
+    stageDurations.notionCreation = Number(process.hrtime.bigint() - previousTime) / 1e6;
+    console.log(`Czas tworzenia strony: ${stageDurations.notionCreation}ms (${stageDurations.notionCreation / 1000}s)`);
+    previousTime = process.hrtime.bigint();
 
-  /* -- Etap aktualizacji strony Notion -- */
-  fileInfo.updated_notion_response = await this.updateNotionPage(
-    notion,
-    fileInfo.notion_response
-  );
+    /* -- Etap aktualizacji strony Notion -- */
+    fileInfo.updated_notion_response = await this.updateNotionPage(
+        notion,
+        fileInfo.notion_response
+    );
 
-  console.log(`Informacje pomyślnie dodane do Notion.`);
+    console.log(`Informacje pomyślnie dodane do Notion.`);
 
-  stageDurations.notionUpdate = Number(process.hrtime.bigint() - previousTime) / 1e6;
-  console.log(`Czas aktualizacji: ${stageDurations.notionUpdate}ms (${stageDurations.notionUpdate / 1000}s)`);
+    stageDurations.notionUpdate = Number(process.hrtime.bigint() - previousTime) / 1e6;
+    console.log(`Czas aktualizacji: ${stageDurations.notionUpdate}ms (${stageDurations.notionUpdate / 1000}s)`);
 
-  // Podsumowanie czasu wykonania
-  stageDurations.total = totalDuration(stageDurations);
-  fileInfo.performance = stageDurations;
-  fileInfo.performance_formatted = Object.fromEntries(
-    Object.entries(fileInfo.performance).map(([stageName, stageDuration]) => [
-      stageName,
-      stageDuration > 1000
-        ? `${(stageDuration / 1000).toFixed(2)} sekund`
-        : `${stageDuration.toFixed(2)}ms`,
-    ])
-  );
+    // Podsumowanie czasu wykonania
+    stageDurations.total = totalDuration(stageDurations);
+    fileInfo.performance = stageDurations;
+    fileInfo.performance_formatted = Object.fromEntries(
+        Object.entries(fileInfo.performance).map(([stageName, stageDuration]) => [
+            stageName,
+            stageDuration > 1000
+                ? `${(stageDuration / 1000).toFixed(2)} sekund`
+                : `${stageDuration.toFixed(2)}ms`,
+        ])
+    );
 
-  return fileInfo;
-},
+    return fileInfo;
+}
 }
