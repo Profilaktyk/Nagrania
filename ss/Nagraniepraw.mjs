@@ -52,10 +52,10 @@ const config = {
 };
 
 export default {
-  name: "Nagrania głosowe do Notion",
+  name: "Nagrania głosu do Notion",
   description: "Transkrybuje pliki audio, tworzy podsumowanie i wysyła je do Notion.",
-  key: "notion-notatki-glosowe",
-  version: "0.0.1",
+  key: "notion-nagrania-glosowe",
+  version: "0.0.4",
   type: "action",
   props: {
     steps: {
@@ -419,7 +419,7 @@ export default {
              // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 1
              // Jeśli chcesz dodać nową opcję podsumowania, dodaj ją do tej tablicy:
              // "Nazwa nowej opcji",
-
+              
             ];
             
             // Dodaj zapisane własne polecenia do opcji
@@ -477,7 +477,6 @@ Opis dostępnych opcji:
 - Ocena dnia (1-100): Liczba od 1 do 100 określająca ogólną ocenę dnia.
 - AI rekomendacje: 5 konkretnych, praktycznych rekomendacji na podstawie treści nagrania.
 - Źródła do przejrzenia: Sugerowane książki, artykuły, kursy lub narzędzia związane z tematem.`,
-
 // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 2
 // Jeśli chcesz dodać nową opcję podsumowania, dodaj jej opis tutaj:
 // "Nazwa nowej opcji": "Opis tego, co ta opcja robi.",
@@ -497,37 +496,7 @@ Opis dostępnych opcji:
           reloadProps: true,
         };
                 
-        if (this.opcje_zaawansowane === true) {
-          // Dodawanie pliku do notatki
-          props.dodac_plik = {
-            type: "boolean",
-            label: "Dodać plik do notatki",
-            description: "Ustaw na **True**, aby dodać plik audio do właściwości plików w Notion.",
-            default: false,
-            reloadProps: true,
-          };
-                        
-          if (this.dodac_plik === true) {
-            props.wlasciwoscPliku = {
-              type: "string",
-              label: "Właściwość pliku",
-              description: "Wybierz właściwość typu Files dla pliku audio.",
-              options: filesProps.map(prop => ({ label: prop, value: prop })),
-              optional: true,
-            };
-                        
-            props.plan_notion = {
-              type: "string",
-              label: "Plan Notion",
-              description: "Wybierz plan Notion (wpływa na maksymalny rozmiar pliku).",
-              options: [
-                "Darmowy (max 5MB)",
-                "Płatny (max 100MB)"
-              ],
-              default: "Darmowy (max 5MB)",
-            };
-          }
-                        
+        if (this.opcje_zaawansowane === true) {                    
           // Opcje języka
           props.jezyk_tytulu = {
             type: "string",
@@ -671,6 +640,7 @@ To ustawienie pozwala na zmniejszenie tych fragmentów - do wartości od 10MB do
             
     return props;
   },
+
 methods: {
     ...common.methods,
     ...translation.methods,
@@ -1738,8 +1708,12 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
         throw new Error(`Błąd komunikatu systemowego: ${error.message}`);
       }
     },
-    
-    // Formatuje odpowiedzi z modelu AI
+
+          // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 5
+          // Dodaj tutaj agregację wyników nowej opcji
+          //if (curr.choice.new_option) acc.new_option.push(curr.choice.new_option || []);
+  
+// Formatuje odpowiedzi z modelu AI
     async formatChat(summaryArray) {
       const resultsArray = [];
       console.log(`Formatuję wyniki AI...`);
@@ -1806,10 +1780,10 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
           if (curr.choice.resources_to_check) acc.resources_to_check.push(curr.choice.resources_to_check || []);
           
           // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 5
-          // Dodaj tutaj agregację wyników nowej opcji
+          // Dodaj tutaj obsługę nowej opcji w tworzeniu prompta systemowego
           //if (curr.choice.new_option) acc.new_option.push(curr.choice.new_option || []);
           
-          // Własne polecenia
+          // Własne polecenia - DODANE
           if (curr.choice.custom_instructions) {
             acc.custom_instructions.push(curr.choice.custom_instructions || []);
           }
@@ -1844,7 +1818,7 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
           // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 6
           // Dodaj tutaj inicjalizację dla nowej opcji
           //new_option: [],
-          custom_instructions: [],
+          custom_instructions: [], // DODANE
           usageArray: [],
         }
       );
@@ -1906,7 +1880,7 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
             chatResponse.arguments.flat() : ["Brak argumentów"]
         }),
         
-// Powiązane tematy z filtrowaniem duplikatów
+        // Powiązane tematy z filtrowaniem duplikatów
         ...(this.opcje_podsumowania.includes("Powiązane tematy") &&
           filtered_related_set?.length > 1 && {
             related_topics: filtered_related_set
@@ -1960,7 +1934,6 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
           day_rating: chatResponse.day_rating || 50
         }),
         
-        // Wspólne opcje
         ...(this.opcje_podsumowania.includes("AI rekomendacje") && {
           ai_recommendations: chatResponse.ai_recommendations.flat().length > 0 ? 
             chatResponse.ai_recommendations.flat() : ["Brak rekomendacji AI"]
@@ -1986,7 +1959,7 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
         //    chatResponse.new_option.flat() : ["Brak danych dla tej opcji"]
         //}),
         
-        // Dodaj własne polecenia, jeśli istnieją
+        // Dodaj własne polecenia, jeśli istnieją - DODANE
         ...(this.wlasne_polecenia_ai && 
           this.opcje_podsumowania.includes(this.wlasne_polecenia_ai) && 
           chatResponse.custom_instructions && 
@@ -2151,7 +2124,7 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
       }
     },
     
-    // Tworzy stronę w Notion z transkrypcją i podsumowaniem
+// Tworzy stronę w Notion z transkrypcją i podsumowaniem
     async createNotionPage(steps, notion, duration, formatted_chat, paragraphs, cost, language) {
       const today = new Date();
       const year = today.getFullYear();
@@ -2209,33 +2182,6 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
         }
       });
 
-      // Sprawdzenie czy plik został przesłany do Notion
-      let fileUploaded = false;
-      let fileExternalUrl = "";
-      
-      // Jeśli zaznaczono dodawanie pliku i podano właściwość pliku
-      if (this.dodac_plik && this.wlasciwoscPliku) {
-        try {
-          // Tutaj kod przesyłania pliku do Notion
-          // W tej implementacji po prostu dodajemy link zewnętrzny
-          fileExternalUrl = config.fileLink;
-          
-          // Sprawdzamy limity plików w Notion
-          const fileSize = fs.statSync(config.filePath).size;
-          const maxSize = this.plan_notion === "Darmowy (max 5MB)" ? 5 * 1000000 : 100 * 1000000;
-          
-          if (fileSize <= maxSize) {
-            // Tutaj można dodać kod faktycznego przesyłania pliku do Notion
-            // Aktualnie ustawiamy flagę na true dla demonstracji
-            fileUploaded = true;
-          } else {
-            console.log(`Plik jest zbyt duży dla planu Notion (${maxSize/1000000}MB). Zostanie dodany tylko link zewnętrzny.`);
-          }
-        } catch (error) {
-          console.error(`Błąd podczas próby przesłania pliku do Notion: ${error.message}`);
-        }
-      }
-
       // Przygotowanie obiektu strony Notion
       const data = {
         parent: {
@@ -2280,6 +2226,7 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
               },
             },
           }),
+          // Zmodyfikowana właściwość linku do pliku - pokazuje nazwę pliku jako link
           ...(this.wlasciwoscLinkuPliku && {
             [this.wlasciwoscLinkuPliku]: {
               rich_text: [
@@ -2291,17 +2238,6 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
                 },
               ],
             },
-          }),
-          ...(this.dodac_plik && this.wlasciwoscPliku && {
-            [this.wlasciwoscPliku]: {
-              files: [
-                {
-                  type: "external",
-                  name: config.fileName,
-                  external: { url: fileUploaded ? fileExternalUrl : config.fileLink }
-                }
-              ]
-            }
           }),
         },
         children: [
@@ -2322,15 +2258,6 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
                     link: { url: config.fileLink },
                   },
                 },
-                ...(fileUploaded ? [
-                  { text: { content: "Twoje nagranie jest " } },
-                  {
-                    text: {
-                      content: "tutaj.",
-                      link: { url: fileExternalUrl },
-                    },
-                  }
-                ] : []),
               ],
               icon: { emoji: this.ikonaNotatki },
               color: "blue_background",
@@ -2470,14 +2397,24 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
           if (typeof item === 'object' && item !== null) {
             // Obsługa źródeł do przejrzenia (specjalny format)
             if (item.title && item.type && (item.url !== undefined) && item.summary && item.quick_use) {
-              const sourceContent = `${item.title} (Typ: ${item.type})\nURL: ${item.url}\nPodsumowanie: ${item.summary}\nSzybkie zastosowanie: ${item.quick_use}`;
-              
+              // Tworzenie formatowanego bloku z tytułem, linkiem i pozostałymi informacjami
               const infoItem = {
                 [itemType]: {
                   rich_text: [
                     {
                       text: {
-                        content: sourceContent,
+                        content: `${item.title} (Typ: ${item.type})\n`,
+                      },
+                    },
+                    {
+                      text: {
+                        content: "Link",
+                        link: { url: item.url || "" }
+                      }
+                    },
+                    {
+                      text: {
+                        content: `\nPodsumowanie: ${item.summary}\nSzybkie zastosowanie: ${item.quick_use}`,
                       },
                     },
                   ],
@@ -2578,6 +2515,7 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
         additionalInfoHandler(meta.chapters, "Rozdziały", "bulleted_list_item");
       }
       
+      // Opcje dziennika
       if (this.opcje_podsumowania.includes("Ogólny opis dnia") && meta.day_overview) {
         additionalInfoHandler([meta.day_overview], "Ogólny opis dnia", "bulleted_list_item");
       }
@@ -2614,6 +2552,7 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
         additionalInfoHandler([`Ocena dnia: ${meta.day_rating}/100`], "Ocena dnia", "bulleted_list_item");
       }
       
+      // Wspólne opcje
       if (this.opcje_podsumowania.includes("AI rekomendacje") && meta.ai_recommendations) {
         additionalInfoHandler(meta.ai_recommendations, "Rekomendacje AI", "bulleted_list_item");
       }
@@ -2871,7 +2810,7 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
     try {
       // Odczytywanie istniejących własnych poleceń z zmiennych środowiskowych Pipedream
       let savedCustomPrompts = [];
-      if ($.service.db) {
+      if ($.service && $.service.db) {
         const savedPromptsStr = await $.service.db.get("customPrompts");
         if (savedPromptsStr) {
           try {
@@ -2893,7 +2832,7 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
         }
 
         // Zapisz zaktualizowane polecenia z powrotem do zmiennych środowiskowych
-        if ($.service.db) {
+        if ($.service && $.service.db) {
           await $.service.db.set("customPrompts", JSON.stringify(savedCustomPrompts));
           console.log("Zapisano zaktualizowane polecenia");
         }
@@ -2975,7 +2914,12 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
           this.steps.trigger.event.name
         )
       );
-      fileInfo.link = encodeURI("https://www.dropbox.com/home" + this.steps.trigger.event.path_lower);
+      // Używaj shareable link zamiast zwykłego path
+      if (this.steps.trigger.event.link) {
+        fileInfo.link = this.steps.trigger.event.link;
+      } else {
+        fileInfo.link = encodeURI("https://www.dropbox.com/home" + this.steps.trigger.event.path_lower);
+      }
     }
 
     config.filePath = fileInfo.path;
