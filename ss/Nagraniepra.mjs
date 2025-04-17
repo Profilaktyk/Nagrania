@@ -52,10 +52,10 @@ const config = {
 };
 
 export default {
-  name: "Nagrania głosu do Notion",
+  name: "Nagrania głosu2 do Notion",
   description: "Transkrybuje pliki audio, tworzy podsumowanie i wysyła je do Notion.",
   key: "notion-nagrania-glosowe",
-  version: "0.0.4",
+  version: "0.0.6",
   type: "action",
   props: {
     steps: {
@@ -151,7 +151,7 @@ export default {
     }
   },
 
-  async additionalProps() {
+async additionalProps() {
     const props = {};
     
     /* --- Opcje zależne od wybranej usługi AI --- */
@@ -386,6 +386,7 @@ export default {
                     console.log("Odczytano zapisane własne polecenia:", savedCustomPrompts);
                   } catch (e) {
                     console.log("Błąd parsowania zapisanych poleceń:", e);
+                    savedCustomPrompts = [];
                   }
                 }
               }
@@ -426,6 +427,22 @@ export default {
             for (const customPrompt of savedCustomPrompts) {
               if (!allSummaryOptions.includes(customPrompt) && customPrompt.trim() !== "") {
                 allSummaryOptions.push(customPrompt);
+              }
+            }
+            
+            // Dodaj bieżące własne polecenie, jeśli istnieje i nie jest już w opcjach
+            if (this.wlasne_polecenia_ai && this.wlasne_polecenia_ai.trim() !== "" && 
+                !allSummaryOptions.includes(this.wlasne_polecenia_ai.trim())) {
+              allSummaryOptions.push(this.wlasne_polecenia_ai.trim());
+              
+              // Zapisz zaktualizowane polecenia do bazy danych
+              if (this.$ && this.$.service && this.$.service.db) {
+                // Dodaj do zapisanych poleceń
+                if (!savedCustomPrompts.includes(this.wlasne_polecenia_ai.trim())) {
+                  savedCustomPrompts.push(this.wlasne_polecenia_ai.trim());
+                  await this.$.service.db.set("customPrompts", JSON.stringify(savedCustomPrompts));
+                  console.log("Zapisano nowe polecenie:", this.wlasne_polecenia_ai.trim());
+                }
               }
             }
             
@@ -689,7 +706,7 @@ methods: {
       }
     },
     
-    // Pobiera plik do tymczasowego przechowywania
+// Pobiera plik do tymczasowego przechowywania
     async downloadToTmp(fileLink, filePath, fileName) {
       try {
         // Określ rozszerzenie pliku
@@ -722,7 +739,7 @@ methods: {
       } catch (error) {
         throw new Error(`Nie udało się pobrać pliku: ${error.message}`);
       }
-    },
+    }
     
     // Pobiera czas trwania pliku audio
     async getDuration(filePath) {
@@ -1359,53 +1376,54 @@ methods: {
     },
     
 // Tworzy prompt systemowy dla modelu AI
-    createSystemPrompt(index) {
+    createSystemPrompt(
+      index,
+      summary_options,
+      summary_verbosity,
+      summary_language,
+      title_language
+    ) {
       const prompt = {};
 
       if (index !== undefined && index === 0) {
         console.log(`Tworzenie promptu systemowego...`);
-        console.log(
-          `Wybrane opcje podsumowania: ${JSON.stringify(
-            this.opcje_podsumowania,
-            null,
-            2
-          )}`
-        );
+        console.log(`Wybrane opcje podsumowania: ${JSON.stringify(summary_options, null, 2)}`);
       }
 
       // Określenie języka podsumowania i tytułu
       let summaryLang;
-      if (this.jezyk_podsumowania) {
-        summaryLang = lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania);
+      if (summary_language) {
+        summaryLang = lang.LANGUAGES.find((l) => l.value === summary_language);
       }
       
       let titleLang;
-      if (this.jezyk_tytulu) {
-        titleLang = lang.LANGUAGES.find((l) => l.value === this.jezyk_tytulu);
+      if (title_language) {
+        titleLang = lang.LANGUAGES.find((l) => l.value === title_language);
       }
 
       // Konfiguracja języka dla prompt systemowego
       let languageSetter = `Napisz wszystkie klucze JSON po angielsku, dokładnie jak w instrukcjach.`;
 
-      if (this.jezyk_podsumowania) {
-        languageSetter += ` Napisz wszystkie wartości oprócz tytułu w języku ${summaryLang.label} (kod: "${summaryLang.value}").
+      // Ustawienia dla podsumowania i dodatkowych sekcji
+      if (summary_language) {
+        languageSetter += ` Napisz wartości podsumowania i wszystkich dodatkowych sekcji (main_points, action_items, follow_up, stories, references, arguments, related_topics, chapters, day_overview, key_events, achievements, challenges, insights, action_plan, personal_growth, reflection, day_rating, ai_recommendations, resources_to_check, custom_instructions) w języku ${summaryLang.label} (kod: "${summaryLang.value}").
             
-        Ważne: Jeśli język transkrypcji jest inny niż ${summaryLang.label}, przetłumacz wartości na ${summaryLang.label}.`;
+        Ważne: Jeśli język transkrypcji jest inny niż ${summaryLang.label}, przetłumacz wartości wszystkich sekcji na ${summaryLang.label}.`;
       } else {
-        languageSetter += ` Napisz wszystkie wartości oprócz tytułu w tym samym języku co transkrypcja.`;
+        languageSetter += ` Napisz wartości podsumowania i wszystkich dodatkowych sekcji w tym samym języku co transkrypcja.`;
       }
       
-      // Dodanie instrukcji dla tytułu
-      if (this.jezyk_tytulu) {
-        languageSetter += ` Napisz tytuł w języku ${titleLang.label} (kod: "${titleLang.value}").`;
-      } else if (this.jezyk_podsumowania) {
-        languageSetter += ` Napisz tytuł w języku ${summaryLang.label} (kod: "${summaryLang.value}").`;
+      // Oddzielne ustawienia dla tytułu
+      if (title_language) {
+        languageSetter += ` Napisz TYLKO tytuł (pole "title") w języku ${titleLang.label} (kod: "${titleLang.value}"). Wszystkie inne pola powinny być zgodne z wcześniejszymi instrukcjami.`;
+      } else if (summary_language && !title_language) {
+        languageSetter += ` Napisz tytuł (pole "title") w języku ${summaryLang.label} (kod: "${summaryLang.value}") tak samo jak resztę pól.`;
       } else {
         languageSetter += ` Napisz tytuł w tym samym języku co transkrypcja.`;
       }
 
       let languagePrefix = "";
-      if (this.jezyk_podsumowania) {
+      if (summary_language) {
         languagePrefix = ` Twoje podsumowanie będzie w języku ${summaryLang.label} (kod: "${summaryLang.value}").`;
       }
 
@@ -1421,123 +1439,123 @@ methods: {
       Klucz "title:" - dodaj tytuł.`;
 
       // Dodawanie odpowiednich sekcji w zależności od wybranych opcji
-      if (this.opcje_podsumowania.includes("Podsumowanie")) {
+      if (summary_options.includes("Podsumowanie")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka"
+          summary_verbosity === "Wysoka"
             ? "20-25%"
-            : this.szczegolowoc === "Średnia"
+            : summary_verbosity === "Średnia"
             ? "10-15%"
             : "5-10%";
         prompt.summary = `Klucz "summary" - utwórz podsumowanie o długości około ${verbosity} transkrypcji.`;
       }
 
-      if (this.opcje_podsumowania.includes("Główne punkty")) {
+      if (summary_options.includes("Główne punkty")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka"
+          summary_verbosity === "Wysoka"
             ? "10"
-            : this.szczegolowoc === "Średnia"
+            : summary_verbosity === "Średnia"
             ? "5"
             : "3";
         prompt.main_points = `Klucz "main_points" - dodaj tablicę głównych punktów. Max ${verbosity} elementów, po max 100 słów każdy.`;
       }
 
-      if (this.opcje_podsumowania.includes("Elementy do wykonania")) {
+      if (summary_options.includes("Elementy do wykonania")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka" ? "5" : this.szczegolowoc === "Średnia" ? "3" : "2";
+          summary_verbosity === "Wysoka" ? "5" : summary_verbosity === "Średnia" ? "3" : "2";
         prompt.action_items = `Klucz "action_items:" - dodaj tablicę elementów do wykonania. Max ${verbosity} elementów, po max 100 słów. Do dat względnych (np. "jutro") dodaj daty ISO 601 w nawiasach.`;
       }
 
-      if (this.opcje_podsumowania.includes("Pytania uzupełniające")) {
+      if (summary_options.includes("Pytania uzupełniające")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka" ? "5" : this.szczegolowoc === "Średnia" ? "3" : "2";
+          summary_verbosity === "Wysoka" ? "5" : summary_verbosity === "Średnia" ? "3" : "2";
         prompt.follow_up = `Klucz "follow_up:" - dodaj tablicę pytań uzupełniających. Max ${verbosity} elementów, po max 100 słów.`;
       }
 
-      if (this.opcje_podsumowania.includes("Historie")) {
+      if (summary_options.includes("Historie")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka" ? "5" : this.szczegolowoc === "Średnia" ? "3" : "2";
+          summary_verbosity === "Wysoka" ? "5" : summary_verbosity === "Średnia" ? "3" : "2";
         prompt.stories = `Klucz "stories:" - dodaj tablicę historii lub przykładów z transkrypcji. Max ${verbosity} elementów, po max 200 słów.`;
       }
 
-      if (this.opcje_podsumowania.includes("Odniesienia")) {
+      if (summary_options.includes("Odniesienia")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka" ? "5" : this.szczegolowoc === "Średnia" ? "3" : "2";
+          summary_verbosity === "Wysoka" ? "5" : summary_verbosity === "Średnia" ? "3" : "2";
         prompt.references = `Klucz "references:" - dodaj tablicę odniesień do zewnętrznych źródeł. Max ${verbosity} elementów, po max 100 słów.`;
       }
 
-      if (this.opcje_podsumowania.includes("Argumenty")) {
+      if (summary_options.includes("Argumenty")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka" ? "5" : this.szczegolowoc === "Średnia" ? "3" : "2";
+          summary_verbosity === "Wysoka" ? "5" : summary_verbosity === "Średnia" ? "3" : "2";
         prompt.arguments = `Klucz "arguments:" - dodaj tablicę potencjalnych argumentów przeciwnych. Max ${verbosity} elementów, po max 100 słów.`;
       }
 
-      if (this.opcje_podsumowania.includes("Powiązane tematy")) {
+      if (summary_options.includes("Powiązane tematy")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka"
+          summary_verbosity === "Wysoka"
             ? "10"
-            : this.szczegolowoc === "Średnia"
+            : summary_verbosity === "Średnia"
             ? "5"
             : "3";
         prompt.related_topics = `Klucz "related_topics:" - dodaj tablicę tematów powiązanych. Max ${verbosity} elementów, po max 100 słów.`;
       }
       
-      if (this.opcje_podsumowania.includes("Rozdziały")) {
+      if (summary_options.includes("Rozdziały")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka" ? "10" : this.szczegolowoc === "Średnia" ? "6" : "3";
+          summary_verbosity === "Wysoka" ? "10" : summary_verbosity === "Średnia" ? "6" : "3";
         prompt.chapters = `Klucz "chapters:" - dodaj tablicę potencjalnych rozdziałów dla tego nagrania. Max ${verbosity} elementów, każdy z tytułem i czasem początku/końca jeśli to możliwe.`;
       }
 
-      if (this.opcje_podsumowania.includes("Ogólny opis dnia")) {
+      if (summary_options.includes("Ogólny opis dnia")) {
         prompt.day_overview = `Klucz "day_overview:" - dodaj krótki opis (50-100 słów) ogólnego nastroju i tematyki dnia na podstawie transkrypcji.`;
       }
 
-      if (this.opcje_podsumowania.includes("Kluczowe wydarzenia")) {
+      if (summary_options.includes("Kluczowe wydarzenia")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka" ? "5" : this.szczegolowoc === "Średnia" ? "3" : "2";
+          summary_verbosity === "Wysoka" ? "5" : summary_verbosity === "Średnia" ? "3" : "2";
         prompt.key_events = `Klucz "key_events:" - dodaj tablicę kluczowych wydarzeń z dnia. Max ${verbosity} elementów, po max 50 słów każdy.`;
       }
 
-      if (this.opcje_podsumowania.includes("Osiągnięcia")) {
+      if (summary_options.includes("Osiągnięcia")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka" ? "5" : this.szczegolowoc === "Średnia" ? "3" : "2";
+          summary_verbosity === "Wysoka" ? "5" : summary_verbosity === "Średnia" ? "3" : "2";
         prompt.achievements = `Klucz "achievements:" - dodaj tablicę osiągnięć lub zakończonych zadań. Max ${verbosity} elementów, po max 50 słów każdy.`;
       }
 
-      if (this.opcje_podsumowania.includes("Wyzwania")) {
+      if (summary_options.includes("Wyzwania")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka" ? "5" : this.szczegolowoc === "Średnia" ? "3" : "2";
+          summary_verbosity === "Wysoka" ? "5" : summary_verbosity === "Średnia" ? "3" : "2";
         prompt.challenges = `Klucz "challenges:" - dodaj tablicę napotkanych trudności. Max ${verbosity} elementów, po max 50 słów każdy.`;
       }
 
-      if (this.opcje_podsumowania.includes("Wnioski")) {
+      if (summary_options.includes("Wnioski")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka" ? "5" : this.szczegolowoc === "Średnia" ? "3" : "2";
+          summary_verbosity === "Wysoka" ? "5" : summary_verbosity === "Średnia" ? "3" : "2";
         prompt.insights = `Klucz "insights:" - dodaj tablicę kluczowych wniosków lub odkryć. Max ${verbosity} elementów, po max 50 słów każdy.`;
       }
 
-      if (this.opcje_podsumowania.includes("Plan działania")) {
+      if (summary_options.includes("Plan działania")) {
         const verbosity =
-          this.szczegolowoc === "Wysoka" ? "5" : this.szczegolowoc === "Średnia" ? "3" : "2";
+          summary_verbosity === "Wysoka" ? "5" : summary_verbosity === "Średnia" ? "3" : "2";
         prompt.action_plan = `Klucz "action_plan:" - dodaj tablicę konkretnych planów lub działań do podjęcia. Max ${verbosity} elementów, po max 50 słów każdy.`;
       }
 
-      if (this.opcje_podsumowania.includes("Rozwój osobisty")) {
+      if (summary_options.includes("Rozwój osobisty")) {
         prompt.personal_growth = `Klucz "personal_growth:" - dodaj opis (50-100 słów) momentów rozwoju osobistego lub pozytywnego wpływu dnia.`;
       }
 
-      if (this.opcje_podsumowania.includes("Refleksja")) {
+      if (summary_options.includes("Refleksja")) {
         prompt.reflection = `Klucz "reflection:" - dodaj podsumowanie (1-2 zdania) wpływu dnia.`;
       }
 
-      if (this.opcje_podsumowania.includes("Ocena dnia (1-100)")) {
+      if (summary_options.includes("Ocena dnia (1-100)")) {
         prompt.day_rating = `Klucz "day_rating:" - dodaj liczbę całkowitą od 1 do 100 określającą ogólną ocenę dnia.`;
       }
       
-      if (this.opcje_podsumowania.includes("AI rekomendacje")) {
+      if (summary_options.includes("AI rekomendacje")) {
         prompt.ai_recommendations = `Klucz "ai_recommendations:" - dodaj tablicę z dokładnie 5 konkretnymi, praktycznymi rekomendacjami na podstawie transkrypcji. Każda rekomendacja powinna mieć 50-70 słów i zawierać praktyczną radę, którą można zastosować od razu.`;
       }
       
-      if (this.opcje_podsumowania.includes("Źródła do przejrzenia")) {
+      if (summary_options.includes("Źródła do przejrzenia")) {
         prompt.resources_to_check = `Klucz "resources_to_check:" - znajdź 3 wysoko relewantne źródła, które dostarczą praktycznych, natychmiastowych rozwiązań związanych z tematyką transkrypcji. 
 
 Dla każdego źródła podaj obiekt zawierający:
@@ -1552,13 +1570,32 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
 
       // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 3
       // Dodaj tutaj obsługę nowej opcji w tworzeniu prompta systemowego
-      //if (this.opcje_podsumowania.includes("Twoja nowa opcja")) {
+      //if (summary_options.includes("Twoja nowa opcja")) {
       //  prompt.new_option = `Klucz "new_option:" - dodaj opis co ma zrobić AI...`;
       //}
       
-      // Obsługa własnego polecenia AI
-      if (this.wlasne_polecenia_ai && this.opcje_podsumowania.includes(this.wlasne_polecenia_ai)) {
-        prompt.custom_instructions = `Klucz "custom_instructions:" - dodatkowo wykonaj następujące polecenie i zapisz wynik jako tablicę elementów: "${this.wlasne_polecenia_ai}". Podaj dokładnie tyle elementów, ile jest wymagane w poleceniu, lub 3-5 elementów jeśli liczba nie jest określona.`;
+      // Obsługa własnych poleceń użytkownika
+      // Sprawdź, czy w opcjach jest polecenie, które nie jest standardową opcją
+      const standardOptions = [
+        "Podsumowanie", "Główne punkty", "Elementy do wykonania", "Pytania uzupełniające",
+        "Historie", "Odniesienia", "Argumenty", "Powiązane tematy", "Rozdziały", 
+        "Ogólny opis dnia", "Kluczowe wydarzenia", "Osiągnięcia", "Wyzwania", "Wnioski", 
+        "Plan działania", "Rozwój osobisty", "Refleksja", "Ocena dnia (1-100)", 
+        "AI rekomendacje", "Źródła do przejrzenia"
+      ];
+      
+      // Szukaj własnych poleceń w opcjach podsumowania
+      for (const option of summary_options) {
+        if (!standardOptions.includes(option)) {
+          // To jest własne polecenie użytkownika
+          prompt.custom_instructions = `Klucz "custom_instructions:" - dodatkowo wykonaj następujące polecenie i zapisz wynik jako tablicę elementów: "${option}". 
+          
+Podaj dokładnie tyle elementów, ile jest wymagane w poleceniu, lub 3-5 elementów jeśli liczba nie jest określona. Staraj się, aby te elementy były jak najbardziej konkretne, praktyczne i bezpośrednio związane z treścią transkrypcji.`;
+          
+          // Zapisz informację o tym, które polecenie jest przetwarzane
+          console.log(`Dodano własne polecenie użytkownika do promptu: "${option}"`);
+          break; // Obsługujemy tylko jedno własne polecenie na raz
+        }
       }
 
       prompt.lock = `Jeśli transkrypcja nie zawiera niczego pasującego do klucza, dodaj jeden element z tekstem "Nie znaleziono nic dla tego typu listy."
@@ -1709,10 +1746,6 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
       }
     },
 
-          // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 5
-          // Dodaj tutaj agregację wyników nowej opcji
-          //if (curr.choice.new_option) acc.new_option.push(curr.choice.new_option || []);
-  
 // Formatuje odpowiedzi z modelu AI
     async formatChat(summaryArray) {
       const resultsArray = [];
@@ -1779,14 +1812,14 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
           if (curr.choice.ai_recommendations) acc.ai_recommendations.push(curr.choice.ai_recommendations || []);
           if (curr.choice.resources_to_check) acc.resources_to_check.push(curr.choice.resources_to_check || []);
           
-          // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 5
-          // Dodaj tutaj obsługę nowej opcji w tworzeniu prompta systemowego
-          //if (curr.choice.new_option) acc.new_option.push(curr.choice.new_option || []);
-          
-          // Własne polecenia - DODANE
+          // Obsługa własnych poleceń użytkownika
           if (curr.choice.custom_instructions) {
             acc.custom_instructions.push(curr.choice.custom_instructions || []);
           }
+
+          // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 5
+          // Dodaj tutaj agregację wyników nowej opcji
+          //if (curr.choice.new_option) acc.new_option.push(curr.choice.new_option || []);
           
           // Śledzenie użycia tokenów
           acc.usageArray.push(curr.usage || 0);
@@ -1815,10 +1848,10 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
           day_rating: 0,
           ai_recommendations: [],
           resources_to_check: [],
+          custom_instructions: [], // Dla własnych poleceń użytkownika
           // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 6
           // Dodaj tutaj inicjalizację dla nowej opcji
           //new_option: [],
-          custom_instructions: [], // DODANE
           usageArray: [],
         }
       );
@@ -1941,15 +1974,7 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
         
         ...(this.opcje_podsumowania.includes("Źródła do przejrzenia") && {
           resources_to_check: chatResponse.resources_to_check.flat().length > 0 ? 
-            chatResponse.resources_to_check.flat() : [
-              {
-                title: "Brak źródeł do przejrzenia",
-                type: "Poradnik",
-                url: "",
-                summary: "Nie znaleziono odpowiednich źródeł dla tego tematu.",
-                quick_use: "Spróbuj innego zapytania lub sformułuj bardziej konkretne pytanie."
-              }
-            ]
+            chatResponse.resources_to_check.flat() : ["Brak źródeł do przejrzenia"]
         }),
 
         // MIEJSCE NA DODANIE NOWEJ OPCJI PODSUMOWANIA - KROK 6
@@ -1959,13 +1984,28 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
         //    chatResponse.new_option.flat() : ["Brak danych dla tej opcji"]
         //}),
         
-        // Dodaj własne polecenia, jeśli istnieją - DODANE
-        ...(this.wlasne_polecenia_ai && 
-          this.opcje_podsumowania.includes(this.wlasne_polecenia_ai) && 
-          chatResponse.custom_instructions && 
-          chatResponse.custom_instructions.flat().length > 0 && {
-            custom_instructions: chatResponse.custom_instructions.flat()
-          }),
+        // Dodawanie wyników własnych poleceń użytkownika
+        // Sprawdź każde polecenie w opcjach podsumowania, które nie jest standardową opcją
+        ...(() => {
+          const standardOptions = [
+            "Podsumowanie", "Główne punkty", "Elementy do wykonania", "Pytania uzupełniające",
+            "Historie", "Odniesienia", "Argumenty", "Powiązane tematy", "Rozdziały", 
+            "Ogólny opis dnia", "Kluczowe wydarzenia", "Osiągnięcia", "Wyzwania", "Wnioski", 
+            "Plan działania", "Rozwój osobisty", "Refleksja", "Ocena dnia (1-100)", 
+            "AI rekomendacje", "Źródła do przejrzenia"
+          ];
+          
+          // Szukaj własnych poleceń w opcjach podsumowania
+          for (const option of this.opcje_podsumowania) {
+            if (!standardOptions.includes(option) && chatResponse.custom_instructions.flat().length > 0) {
+              // Znalezione własne polecenie
+              return {
+                custom_instructions: chatResponse.custom_instructions.flat()
+              };
+            }
+          }
+          return {}; // Zwróć pusty obiekt, jeśli nie znaleziono własnych poleceń
+        })(),
         
         // Informacje o tokenach
         tokens: arraySum(chatResponse.usageArray),
@@ -2351,136 +2391,141 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
 
       // Funkcja do dodawania sekcji informacyjnych
       function additionalInfoHandler(arr, header, itemType) {
-        if (!arr || arr.length === 0) return;
+      if (!arr || arr.length === 0) return;
 
-        // Nagłówek sekcji - pierwsza litera wielka, reszta mała
-        const formattedHeader = header.charAt(0).toUpperCase() + header.slice(1).toLowerCase();
-        
-        const infoHeader = {
-          heading_2: {
+      // Nagłówek sekcji - pierwsza litera wielka, reszta mała
+      const formattedHeader = header.charAt(0).toUpperCase() + header.slice(1).toLowerCase();
+      
+      const infoHeader = {
+        heading_2: {
+          rich_text: [
+            {
+              text: {
+                content: formattedHeader,
+              },
+            },
+          ],
+        },
+      };
+
+      additionalInfoArray.push(infoHeader);
+
+      // Dodanie callout z ostrzeżeniem dla sekcji "Argumenty"
+      if (header === "Argumenty i obszary do poprawy") {
+        const argWarning = {
+          callout: {
             rich_text: [
               {
                 text: {
-                  content: formattedHeader,
+                  content: "To potencjalne argumenty przeciwne. Tak jak każda inna część tego podsumowania, dokładność nie jest gwarantowana.",
                 },
               },
             ],
+            icon: {
+              emoji: "⚠️",
+            },
+            color: "orange_background",
           },
         };
 
-        additionalInfoArray.push(infoHeader);
+        additionalInfoArray.push(argWarning);
+      }
 
-        // Dodanie callout z ostrzeżeniem dla sekcji "Argumenty"
-        if (header === "Argumenty i obszary do poprawy") {
-          const argWarning = {
-            callout: {
-              rich_text: [
-                {
-                  text: {
-                    content: "To potencjalne argumenty przeciwne. Tak jak każda inna część tego podsumowania, dokładność nie jest gwarantowana.",
-                  },
-                },
-              ],
-              icon: {
-                emoji: "⚠️",
-              },
-              color: "orange_background",
-            },
-          };
-
-          additionalInfoArray.push(argWarning);
-        }
-
-        // Dodanie elementów listy
-        for (let item of arr) {
-          // Jeśli element jest obiektem (np. dla rozdziałów lub źródeł), przetwórz go odpowiednio
-          if (typeof item === 'object' && item !== null) {
-            // Obsługa źródeł do przejrzenia (specjalny format)
-            if (item.title && item.type && (item.url !== undefined) && item.summary && item.quick_use) {
-              // Tworzenie formatowanego bloku z tytułem, linkiem i pozostałymi informacjami
-              const infoItem = {
-                [itemType]: {
-                  rich_text: [
-                    {
-                      text: {
-                        content: `${item.title} (Typ: ${item.type})\n`,
-                      },
-                    },
-                    {
-                      text: {
-                        content: "Link",
-                        link: { url: item.url || "" }
-                      }
-                    },
-                    {
-                      text: {
-                        content: `\nPodsumowanie: ${item.summary}\nSzybkie zastosowanie: ${item.quick_use}`,
-                      },
-                    },
-                  ],
-                },
-              };
-              
-              additionalInfoArray.push(infoItem);
-            } 
-            // Obsługa rozdziałów
-            else if (item.title) {
-              let content = item.title;
-              if (item.start_time || item.end_time) {
-                content += ` (${item.start_time || "00:00"} - ${item.end_time || "koniec"})`;
-              }
-              
-              const infoItem = {
-                [itemType]: {
-                  rich_text: [
-                    {
-                      text: {
-                        content: content,
-                      },
-                    },
-                  ],
-                },
-              };
-              
-              additionalInfoArray.push(infoItem);
-            } 
-            // Inne obiekty
-            else {
-              const content = JSON.stringify(item);
-              
-              const infoItem = {
-                [itemType]: {
-                  rich_text: [
-                    {
-                      text: {
-                        content: content,
-                      },
-                    },
-                  ],
-                },
-              };
-              
-              additionalInfoArray.push(infoItem);
-            }
-          } 
-          // Standardowa obsługa dla elementów tekstowych
-          else {
+      // Dodanie elementów listy
+      for (let item of arr) {
+        // Jeśli element jest obiektem (np. dla rozdziałów lub źródeł), przetwórz go odpowiednio
+        if (typeof item === 'object' && item !== null) {
+          // Obsługa źródeł do przejrzenia (specjalny format)
+          if (item.title && item.type && (item.url !== undefined) && item.summary) {
+            // Tworzenie formatowanego bloku z tytułem, typem i linkiem w tej samej linii
             const infoItem = {
               [itemType]: {
                 rich_text: [
                   {
                     text: {
-                      content: item,
+                      content: `${item.title} (Typ: ${item.type}) - `,
+                    },
+                  },
+                  {
+                    text: {
+                      content: "Link",
+                      link: { url: item.url || "" }
+                    }
+                  },
+                  {
+                    text: {
+                      content: `\n${item.summary}`,
+                    },
+                  },
+                  ...(item.quick_use ? [{
+                    text: {
+                      content: `\n${item.quick_use}`,
+                    },
+                  }] : []),
+                ],
+              },
+            };
+            
+            additionalInfoArray.push(infoItem);
+          } 
+          // Obsługa rozdziałów
+          else if (item.title) {
+            let content = item.title;
+            if (item.start_time || item.end_time) {
+              content += ` (${item.start_time || "00:00"} - ${item.end_time || "koniec"})`;
+            }
+            
+            const infoItem = {
+              [itemType]: {
+                rich_text: [
+                  {
+                    text: {
+                      content: content,
                     },
                   },
                 ],
               },
             };
-
+            
+            additionalInfoArray.push(infoItem);
+          } 
+          // Inne obiekty
+          else {
+            const content = JSON.stringify(item);
+            
+            const infoItem = {
+              [itemType]: {
+                rich_text: [
+                  {
+                    text: {
+                      content: content,
+                    },
+                  },
+                ],
+              },
+            };
+            
             additionalInfoArray.push(infoItem);
           }
+        } 
+        // Standardowa obsługa dla elementów tekstowych
+        else {
+          const infoItem = {
+            [itemType]: {
+              rich_text: [
+                {
+                  text: {
+                    content: item,
+                  },
+                },
+              ],
+            },
+          };
+
+          additionalInfoArray.push(infoItem);
         }
       }
+    }
 
       // Dodanie wszystkich sekcji, które zostały wybrane w opcjach podsumowania
       if (this.opcje_podsumowania.includes("Główne punkty") && meta.main_points) {
@@ -2768,7 +2813,7 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
     },
   },
   
-  async run({ steps, $ }) {
+ async run({ steps, $ }) {
     // Obiekt do mierzenia czasu
     let stageDurations = {
       setup: 0,
@@ -2875,7 +2920,13 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
       fileInfo.file_name = this.steps.google_drive_download.$return_value.name.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\\/]/g, "");
       fileInfo.path = `/tmp/${fileInfo.file_name}`;
       fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
-      fileInfo.link = this.steps.trigger.event.webViewLink;
+      
+      // Użyj webViewLink zamiast bezpośredniego linku do pobrania
+      if (this.steps.trigger.event.webViewLink) {
+        fileInfo.link = this.steps.trigger.event.webViewLink;
+      } else {
+        fileInfo.link = `https://drive.google.com/file/d/${this.steps.trigger.event.id}/view`;
+      }
       
       if (!config.supportedMimes.includes(fileInfo.mime)) {
         throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
@@ -2886,7 +2937,13 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
       fileInfo.file_name = this.steps.download_file.$return_value.name.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\\/]/g, "");
       fileInfo.path = `/tmp/${fileInfo.file_name}`;
       fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
-      fileInfo.link = this.steps.trigger.event.webViewLink;
+      
+      // Użyj webViewLink zamiast bezpośredniego linku do pobrania
+      if (this.steps.trigger.event.webViewLink) {
+        fileInfo.link = this.steps.trigger.event.webViewLink;
+      } else {
+        fileInfo.link = `https://drive.google.com/file/d/${this.steps.trigger.event.id}/view`;
+      }
       
       if (!config.supportedMimes.includes(fileInfo.mime)) {
         throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
@@ -2898,7 +2955,13 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
       fileInfo.path = this.steps.ms_onedrive_download.$return_value.replace(/[\?$#&\{\}\[\]<>\*!@:\+\\]/g, "");
       fileInfo.file_name = fileInfo.path.replace(/^\/tmp\//, "");
       fileInfo.mime = fileInfo.path.match(/\.\w+$/)[0];
-      fileInfo.link = this.steps.trigger.event.webUrl;
+      
+      // Użyj webUrl zamiast bezpośredniego linku do pobrania
+      if (this.steps.trigger.event.webUrl) {
+        fileInfo.link = this.steps.trigger.event.webUrl;
+      } else {
+        fileInfo.link = `https://onedrive.live.com/?id=${this.steps.trigger.event.id}`;
+      }
       
       if (!config.supportedMimes.includes(fileInfo.mime)) {
         throw new Error(`Nieobsługiwany format pliku. Obsługiwane: ${config.supportedMimes.join(", ")}`);
@@ -2914,9 +2977,15 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
           this.steps.trigger.event.name
         )
       );
-      // Używaj shareable link zamiast zwykłego path
+      
+      // Modyfikacja linku, aby kierował do interfejsu webowego Dropboxa zamiast pobierania
       if (this.steps.trigger.event.link) {
-        fileInfo.link = this.steps.trigger.event.link;
+        // Zamień dl=1 na dl=0 w linku, aby otworzyć w interfejsie webowym zamiast pobierać
+        fileInfo.link = this.steps.trigger.event.link.replace(/dl=1/g, "dl=0");
+        if (!fileInfo.link.includes("dl=0")) {
+          // Jeśli nie ma parametru dl, dodaj go
+          fileInfo.link += (fileInfo.link.includes("?") ? "&" : "?") + "dl=0";
+        }
       } else {
         fileInfo.link = encodeURI("https://www.dropbox.com/home" + this.steps.trigger.event.path_lower);
       }
@@ -3040,48 +3109,68 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
     previousTime = process.hrtime.bigint();
 
     /* -- Etap tłumaczenia (opcjonalnie) -- */
-    if (this.jezyk_podsumowania || this.jezyk_tytulu) {
+    if (this.jezyk_podsumowania || this.jezyk_tytulu || this.jezyk_transkrypcji) {
       console.log(`Sprawdzam język transkrypcji...`);
 
-      // Wykryj język transkrypcji
-      const detectedLanguage = await this.detectLanguage(
-        llm,
-        this.usluga_ai,
-        this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
-        fileInfo.paragraphs.transcript[0]
-      );
-
-      fileInfo.language = {
-        transcript: await this.formatDetectedLanguage(
-          detectedLanguage.choices[0].message.content
-        ),
-        summary: this.jezyk_podsumowania
-          ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
-          : "Nie ustawiono",
-        title: this.jezyk_tytulu
-          ? lang.LANGUAGES.find((l) => l.value === this.jezyk_tytulu)
-          : (this.jezyk_podsumowania
+      // Wykryj język transkrypcji tylko jeśli nie został jawnie określony
+      let transcriptionLanguage;
+      
+      if (this.jezyk_transkrypcji) {
+        // Używaj jawnie wybranego języka transkrypcji
+        transcriptionLanguage = lang.LANGUAGES.find((l) => l.value === this.jezyk_transkrypcji);
+        fileInfo.language = {
+          transcript: transcriptionLanguage,
+          summary: this.jezyk_podsumowania
             ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
-            : "Nie ustawiono")
-      };
+            : transcriptionLanguage,
+          title: this.jezyk_tytulu
+            ? lang.LANGUAGES.find((l) => l.value === this.jezyk_tytulu)
+            : (this.jezyk_podsumowania
+              ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
+              : transcriptionLanguage)
+        };
+      } else {
+        // Wykryj język automatycznie
+        const detectedLanguage = await this.detectLanguage(
+          llm,
+          this.usluga_ai,
+          this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+          fileInfo.paragraphs.transcript[0]
+        );
+
+        fileInfo.language = {
+          transcript: await this.formatDetectedLanguage(
+            detectedLanguage.choices[0].message.content
+          ),
+          summary: this.jezyk_podsumowania
+            ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
+            : "Nie ustawiono",
+          title: this.jezyk_tytulu
+            ? lang.LANGUAGES.find((l) => l.value === this.jezyk_tytulu)
+            : (this.jezyk_podsumowania
+              ? lang.LANGUAGES.find((l) => l.value === this.jezyk_podsumowania)
+              : "Nie ustawiono")
+        };
+
+        // Zapisz koszty wykrywania języka
+        const languageCheckUsage = {
+          prompt_tokens: detectedLanguage.usage.prompt_tokens,
+          completion_tokens: detectedLanguage.usage.completion_tokens,
+        };
+
+        fileInfo.cost.language_check = await this.calculateGPTCost(
+          languageCheckUsage,
+          this.usluga_ai,
+          "text",
+          this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
+          "Sprawdzanie języka"
+        );
+      }
 
       console.log("Informacje o językach:", JSON.stringify(fileInfo.language, null, 2));
 
-      const languageCheckUsage = {
-        prompt_tokens: detectedLanguage.usage.prompt_tokens,
-        completion_tokens: detectedLanguage.usage.completion_tokens,
-      };
-
-      fileInfo.cost.language_check = await this.calculateGPTCost(
-        languageCheckUsage,
-        this.usluga_ai,
-        "text",
-        this.usluga_ai === "Anthropic" ? this.model_anthropic : this.model_chat,
-        "Sprawdzanie języka"
-      );
-
       // Tłumaczenie transkrypcji, jeśli opcja została włączona i języki są różne
-      if (this.przetlumacz_transkrypcje?.includes("Przetłumacz") &&
+      if (this.jezyk_podsumowania && this.przetlumacz_transkrypcje?.includes("Przetłumacz") &&
         fileInfo.language.transcript.value !== fileInfo.language.summary.value) {
         console.log(
           `Język transkrypcji (${fileInfo.language.transcript.label}) różni się od języka podsumowania (${fileInfo.language.summary.label}). Tłumaczę transkrypcję...`
@@ -3211,4 +3300,3 @@ Priorytetyzuj źródła zawierające konkretne, praktyczne wskazówki i wiarygod
 
     return fileInfo;
   },
-}
